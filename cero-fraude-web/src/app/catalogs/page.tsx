@@ -27,6 +27,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Tabs,
   TabsContent,
@@ -49,52 +50,101 @@ type CatalogItem = {
   description?: string | null;
 };
 
-const catalogs = [
+type CatalogKey =
+  | "categories"
+  | "types"
+  | "states"
+  | "report-reasons"
+  | "evidence-types"
+  | "authorities";
+
+// Present only on catalogs that can be created from the panel. Length
+// limits mirror the backend DTOs (and the VARCHAR sizes in schema.sql).
+type CreateConfig = {
+  buttonLabel: string;
+  successMessage: string;
+  namePlaceholder: string;
+  codePlaceholder: string;
+  nameMaxLength: number;
+  codeMaxLength: number;
+  requiresDescription: boolean;
+};
+
+type CatalogConfig = {
+  key: CatalogKey;
+  label: string;
+  singular: string;
+  endpoint: string;
+  create?: CreateConfig;
+};
+
+const AUTHORITY_DESCRIPTION_MAX_LENGTH = 255;
+
+const catalogs: CatalogConfig[] = [
   {
     key: "categories",
     label: "Categorías",
     singular: "categoría",
     endpoint: "/categories",
-    canCreate: true,
+    create: {
+      buttonLabel: "Agregar categoría",
+      successMessage: "Categoría agregada correctamente",
+      namePlaceholder: "Ej. Redes sociales",
+      codePlaceholder: "Ej. SOCIAL",
+      nameMaxLength: 20,
+      codeMaxLength: 11,
+      requiresDescription: false,
+    },
   },
   {
     key: "types",
     label: "Tipos de fraude",
     singular: "tipo de fraude",
     endpoint: "/types",
-    canCreate: true,
+    create: {
+      buttonLabel: "Agregar tipo de fraude",
+      successMessage: "Tipo de fraude agregado correctamente",
+      namePlaceholder: "Ej. Promoción falsa",
+      codePlaceholder: "Ej. FAKE_PROMO",
+      nameMaxLength: 50,
+      codeMaxLength: 11,
+      requiresDescription: false,
+    },
   },
   {
     key: "states",
     label: "Estados",
     singular: "estado",
     endpoint: "/states",
-    canCreate: false,
   },
   {
     key: "report-reasons",
     label: "Motivos de reporte",
     singular: "motivo de reporte",
     endpoint: "/report-reasons",
-    canCreate: false,
   },
   {
     key: "evidence-types",
     label: "Tipos de evidencia",
     singular: "tipo de evidencia",
     endpoint: "/evidence-types",
-    canCreate: false,
   },
   {
     key: "authorities",
     label: "Autoridades",
     singular: "autoridad",
     endpoint: "/authorities",
-    canCreate: false,
+    create: {
+      buttonLabel: "Agregar autoridad",
+      successMessage: "Autoridad agregada correctamente",
+      namePlaceholder: "Ej. CONDUSEF",
+      codePlaceholder: "Ej. CONDUSEF",
+      nameMaxLength: 100,
+      codeMaxLength: 11,
+      requiresDescription: true,
+    },
   },
-] as const;
-
-type CatalogKey = (typeof catalogs)[number]["key"];
+];
 
 function getErrorMessage(error: unknown) {
   if (axios.isAxiosError(error)) {
@@ -129,11 +179,19 @@ export default function CatalogsPage() {
 
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
+  const [description, setDescription] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
 
   const currentCatalog = catalogs.find(
     (catalog) => catalog.key === selected
   )!;
+  const createConfig = currentCatalog.create;
+
+  const canSubmitCreate =
+    !saving &&
+    name.trim() !== "" &&
+    code.trim() !== "" &&
+    (!createConfig?.requiresDescription || description.trim() !== "");
 
   const hasDescription = selected === "authorities";
 
@@ -202,10 +260,11 @@ export default function CatalogsPage() {
   }
 
   function openCreateDialog() {
-    if (!currentCatalog.canCreate) return;
+    if (!createConfig) return;
 
     setName("");
     setCode("");
+    setDescription("");
     setCreateError(null);
     setCreateOpen(true);
   }
@@ -218,14 +277,21 @@ export default function CatalogsPage() {
   }
 
   async function createCatalogItem() {
-    if (!currentCatalog.canCreate || saving) return;
+    if (!createConfig || saving) return;
 
     const trimmedName = name.trim();
     const trimmedCode = code.trim().toUpperCase();
+    const trimmedDescription = description.trim();
 
-    if (!trimmedName || !trimmedCode) {
+    if (
+      !trimmedName ||
+      !trimmedCode ||
+      (createConfig.requiresDescription && !trimmedDescription)
+    ) {
       setCreateError(
-        "Completa el nombre y el código."
+        createConfig.requiresDescription
+          ? "Completa el nombre, el código y la descripción."
+          : "Completa el nombre y el código."
       );
       return;
     }
@@ -237,17 +303,18 @@ export default function CatalogsPage() {
       await api.post(currentCatalog.endpoint, {
         name: trimmedName,
         code: trimmedCode,
+        // Only authorities have a description column.
+        ...(createConfig.requiresDescription && {
+          description: trimmedDescription,
+        }),
       });
 
-      toast.success(
-        currentCatalog.key === "categories"
-          ? "Categoría agregada correctamente"
-          : "Tipo de fraude agregado correctamente"
-      );
+      toast.success(createConfig.successMessage);
 
       setCreateOpen(false);
       setName("");
       setCode("");
+      setDescription("");
 
       refreshCatalog();
     } catch (error) {
@@ -312,7 +379,7 @@ export default function CatalogsPage() {
                   </CardTitle>
 
                   <CardDescription>
-                    {currentCatalog.canCreate
+                    {createConfig
                       ? "Consulta los registros y agrega nuevos elementos."
                       : "Catálogo de consulta. Sus registros no se modifican desde este panel."}
                   </CardDescription>
@@ -325,15 +392,13 @@ export default function CatalogsPage() {
                     </Badge>
                   )}
 
-                  {currentCatalog.canCreate && (
+                  {createConfig && (
                     <Button
                       size="sm"
                       onClick={openCreateDialog}
                     >
                       <Plus className="mr-2 size-4" />
-                      {selected === "categories"
-                        ? "Agregar categoría"
-                        : "Agregar tipo de fraude"}
+                      {createConfig.buttonLabel}
                     </Button>
                   )}
                 </div>
@@ -488,14 +553,10 @@ export default function CatalogsPage() {
                 onChange={(event) =>
                   setName(event.target.value)
                 }
-                placeholder={
-                  selected === "categories"
-                    ? "Ej. Redes sociales"
-                    : "Ej. Promoción falsa"
-                }
+                placeholder={createConfig?.namePlaceholder}
                 required
                 disabled={saving}
-                maxLength={100}
+                maxLength={createConfig?.nameMaxLength}
               />
             </div>
 
@@ -510,21 +571,43 @@ export default function CatalogsPage() {
                 onChange={(event) =>
                   setCode(event.target.value.toUpperCase())
                 }
-                placeholder={
-                  selected === "categories"
-                    ? "Ej. SOCIAL_MEDIA"
-                    : "Ej. FAKE_PROMO"
-                }
+                placeholder={createConfig?.codePlaceholder}
                 required
                 disabled={saving}
-                maxLength={50}
+                maxLength={createConfig?.codeMaxLength}
               />
 
               <p className="text-xs text-muted-foreground">
                 Identificador del catálogo. Utiliza letras,
-                números y guiones bajos.
+                números y guiones bajos (máximo{" "}
+                {createConfig?.codeMaxLength} caracteres).
               </p>
             </div>
+
+            {createConfig?.requiresDescription && (
+              <div className="space-y-2">
+                <Label htmlFor="catalog-description">
+                  Descripción
+                </Label>
+
+                <Textarea
+                  id="catalog-description"
+                  value={description}
+                  onChange={(event) =>
+                    setDescription(event.target.value)
+                  }
+                  placeholder="Ej. Orienta en asuntos relacionados con instituciones financieras."
+                  required
+                  disabled={saving}
+                  maxLength={AUTHORITY_DESCRIPTION_MAX_LENGTH}
+                  rows={3}
+                />
+
+                <p className="text-right text-xs text-muted-foreground">
+                  {description.length}/{AUTHORITY_DESCRIPTION_MAX_LENGTH}
+                </p>
+              </div>
+            )}
 
             {createError && (
               <p
@@ -547,11 +630,7 @@ export default function CatalogsPage() {
 
               <Button
                 type="submit"
-                disabled={
-                  saving ||
-                  !name.trim() ||
-                  !code.trim()
-                }
+                disabled={!canSubmitCreate}
               >
                 {saving
                   ? "Guardando..."
