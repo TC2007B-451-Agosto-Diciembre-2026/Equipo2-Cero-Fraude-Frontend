@@ -83,7 +83,7 @@ export function PostManagement({
   availableAuthorities,
   statusIds,
   onUpdated,
-}: Props) {
+}: Readonly<Props>) {
   const [status, setStatus] = useState(initialStatus);
   const [isFraud, setIsFraud] = useState(initialIsFraud);
   const [comments, setComments] = useState(initialComments);
@@ -364,7 +364,7 @@ const remainingAuthorities = availableAuthorities.filter(
                 <p className="mt-2 text-sm">{comment.text}</p>
 
                 {comment.is_visible !== undefined &&
-                  !Boolean(comment.is_visible) && (
+                  !comment.is_visible && (
                     <Badge variant="outline" className="mt-2">
                       Oculto
                     </Badge>

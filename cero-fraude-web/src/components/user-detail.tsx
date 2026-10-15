@@ -64,7 +64,7 @@ function getErrorMessage(error: unknown) {
   return "No fue posible consultar el usuario.";
 }
 
-export function UserDetail({ userId }: Props) {
+export function UserDetail({ userId }: Readonly<Props>) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -92,7 +92,7 @@ export function UserDetail({ userId }: Props) {
         return;
         }
 
-    const nextStatus = !Boolean(user.is_active);
+    const nextStatus = !user.is_active;
 
     setSaving(true);
 

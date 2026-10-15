@@ -9,7 +9,7 @@ type SectionPlaceholderProps = {
 export function SectionPlaceholder({
   title,
   description,
-}: SectionPlaceholderProps) {
+}: Readonly<SectionPlaceholderProps>) {
   return (
     <div className="space-y-6">
       <div>
