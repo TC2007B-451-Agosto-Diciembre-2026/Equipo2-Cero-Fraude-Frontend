@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { Plus, RefreshCw } from "lucide-react";
+import { Pencil, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
@@ -76,8 +76,12 @@ type CatalogConfig = {
   singular: string;
   endpoint: string;
   create?: CreateConfig;
+  // Only authorities have an update endpoint (PATCH /authorities/:id),
+  // which accepts name and description; the code can't change.
+  canEdit?: boolean;
 };
 
+const AUTHORITY_NAME_MAX_LENGTH = 100;
 const AUTHORITY_DESCRIPTION_MAX_LENGTH = 255;
 
 const catalogs: CatalogConfig[] = [
@@ -139,10 +143,11 @@ const catalogs: CatalogConfig[] = [
       successMessage: "Autoridad agregada correctamente",
       namePlaceholder: "Ej. CONDUSEF",
       codePlaceholder: "Ej. CONDUSEF",
-      nameMaxLength: 100,
+      nameMaxLength: AUTHORITY_NAME_MAX_LENGTH,
       codeMaxLength: 11,
       requiresDescription: true,
     },
+    canEdit: true,
   },
 ];
 
@@ -186,6 +191,36 @@ export default function CatalogsPage() {
     (catalog) => catalog.key === selected
   )!;
   const createConfig = currentCatalog.create;
+  const canEdit = currentCatalog.canEdit === true;
+
+  const [editTarget, setEditTarget] = useState<CatalogItem | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+
+  // Only the fields that differ from the stored values are sent, and the
+  // backend requires at least one of them.
+  const editChanges: { name?: string; description?: string } = {};
+
+  if (editTarget) {
+    const trimmedName = editName.trim();
+    const trimmedDescription = editDescription.trim();
+
+    if (trimmedName !== editTarget.name) {
+      editChanges.name = trimmedName;
+    }
+
+    if (trimmedDescription !== (editTarget.description ?? "")) {
+      editChanges.description = trimmedDescription;
+    }
+  }
+
+  const canSubmitEdit =
+    !editSaving &&
+    editName.trim() !== "" &&
+    editDescription.trim() !== "" &&
+    Object.keys(editChanges).length > 0;
 
   const canSubmitCreate =
     !saving &&
@@ -200,7 +235,7 @@ export default function CatalogsPage() {
   );
 
   const columnCount =
-    2 + Number(hasCode) + Number(hasDescription);
+    2 + Number(hasCode) + Number(hasDescription) + Number(canEdit);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -327,6 +362,44 @@ export default function CatalogsPage() {
     }
   }
 
+  function openEditDialog(item: CatalogItem) {
+    setEditTarget(item);
+    setEditName(item.name);
+    setEditDescription(item.description ?? "");
+    setEditError(null);
+  }
+
+  function closeEditDialog() {
+    if (editSaving) return;
+
+    setEditTarget(null);
+    setEditError(null);
+  }
+
+  async function updateCatalogItem() {
+    if (!editTarget || !canSubmitEdit) return;
+
+    setEditSaving(true);
+    setEditError(null);
+
+    try {
+      await api.patch(
+        `${currentCatalog.endpoint}/${editTarget.id}`,
+        editChanges
+      );
+
+      toast.success("Autoridad actualizada correctamente");
+
+      setEditTarget(null);
+      refreshCatalog();
+    } catch (error) {
+      setEditError(getErrorMessage(error));
+      toast.error("No se pudo actualizar el registro");
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -446,6 +519,12 @@ export default function CatalogsPage() {
                             Descripción
                           </TableHead>
                         )}
+
+                        {canEdit && (
+                          <TableHead className="text-right">
+                            Acciones
+                          </TableHead>
+                        )}
                       </TableRow>
                     </TableHeader>
 
@@ -493,6 +572,20 @@ export default function CatalogsPage() {
                             {hasDescription && (
                               <TableCell className="text-muted-foreground">
                                 {item.description ?? "—"}
+                              </TableCell>
+                            )}
+
+                            {canEdit && (
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  aria-label={`Editar ${item.name}`}
+                                  onClick={() => openEditDialog(item)}
+                                >
+                                  <Pencil className="mr-1 size-4" />
+                                  Editar
+                                </Button>
                               </TableCell>
                             )}
                           </TableRow>
@@ -635,6 +728,97 @@ export default function CatalogsPage() {
                 {saving
                   ? "Guardando..."
                   : "Agregar"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={editTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeEditDialog();
+          }
+        }}
+      >
+        <DialogContent
+          className="sm:max-w-md"
+          showCloseButton={!editSaving}
+          onInteractOutside={(event) => {
+            if (editSaving) event.preventDefault();
+          }}
+          onEscapeKeyDown={(event) => {
+            if (editSaving) event.preventDefault();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Editar {currentCatalog.singular}</DialogTitle>
+
+            <DialogDescription>
+              Código {editTarget?.code ?? "—"}. El código no se puede
+              modificar.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form
+            className="space-y-5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void updateCatalogItem();
+            }}
+          >
+            <div className="space-y-2">
+              <Label htmlFor="edit-name">Nombre</Label>
+
+              <Input
+                id="edit-name"
+                value={editName}
+                onChange={(event) => setEditName(event.target.value)}
+                required
+                disabled={editSaving}
+                maxLength={AUTHORITY_NAME_MAX_LENGTH}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-description">Descripción</Label>
+
+              <Textarea
+                id="edit-description"
+                value={editDescription}
+                onChange={(event) =>
+                  setEditDescription(event.target.value)
+                }
+                required
+                disabled={editSaving}
+                maxLength={AUTHORITY_DESCRIPTION_MAX_LENGTH}
+                rows={3}
+              />
+
+              <p className="text-right text-xs text-muted-foreground">
+                {editDescription.length}/{AUTHORITY_DESCRIPTION_MAX_LENGTH}
+              </p>
+            </div>
+
+            {editError && (
+              <p role="alert" className="text-sm text-destructive">
+                {editError}
+              </p>
+            )}
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={editSaving}
+                onClick={closeEditDialog}
+              >
+                Cancelar
+              </Button>
+
+              <Button type="submit" disabled={!canSubmitEdit}>
+                {editSaving ? "Guardando..." : "Guardar cambios"}
               </Button>
             </DialogFooter>
           </form>
