@@ -28,6 +28,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PostEvidenceManager } from "@/components/post-evidence-manager";
 import { PostAuthorities } from "@/components/post-authorities";
+import { PostReports } from "@/components/post-reports";
 
 type PostStatus =
   | "DRAFT"
@@ -376,20 +377,7 @@ export function PostDetail({ postId }: Props) {
             }
           />
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Reportes recibidos</CardTitle>
-              <CardDescription>
-                Información proporcionada por otros usuarios.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                La consulta de reportes estará disponible
-                cuando se implemente GET /posts/:postId/reports.
-              </p>
-            </CardContent>
-          </Card>
+          <PostReports postId={post.id} />
 
           <Card>
             <CardHeader>
