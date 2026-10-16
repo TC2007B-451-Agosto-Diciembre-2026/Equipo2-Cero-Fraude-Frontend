@@ -10,8 +10,7 @@ import {
   Tags,
   ShieldCheck,
   History,
-  ChartColumnDecreasing,
-  Flag,
+  ChartColumnDecreasing
 } from "lucide-react";
 
 import {
@@ -30,7 +29,6 @@ import {
 const navigation = [
   { title: "Inicio", href: "/", icon: LayoutDashboard },
   { title: "Publicaciones", href: "/posts", icon: FileText },
-  { title: "Reportes", href: "/reports", icon: Flag },
   { title: "Estadísticas", href: "/statistics", icon: ChartColumnDecreasing},
   { title: "Usuarios", href: "/users", icon: Users },
   { title: "Catálogos", href: "/catalogs", icon: Tags },
