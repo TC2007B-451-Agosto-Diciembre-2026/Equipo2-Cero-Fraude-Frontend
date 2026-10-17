@@ -1,8 +1,8 @@
 
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
 import {
   ChevronLeft,
@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { PageHeader } from "@/components/page-header";
+import { PostStatusBadge } from "@/components/post-status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -58,14 +60,6 @@ type PaginatedPosts = {
   total: number;
 };
 
-const statusStyles: Record<string, string> = {
-  DRAFT: "bg-slate-100 text-slate-700",
-  UPLOADED: "bg-amber-100 text-amber-800",
-  PUBLISHED: "bg-blue-100 text-blue-800",
-  VALIDATED: "bg-emerald-100 text-emerald-800",
-  REJECTED: "bg-red-100 text-red-800",
-};
-
 function formatDate(value: string | null) {
   if (!value) return "—";
 
@@ -101,8 +95,19 @@ function FraudBadge({ value }: { value: boolean | null }) {
   );
 }
 
+// useSearchParams() needs a Suspense boundary so the page can still be
+// prerendered (Next shows the fallback until the query string is known).
 export default function PostsPage() {
+  return (
+    <Suspense>
+      <PostsPageContent />
+    </Suspense>
+  );
+}
+
+function PostsPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [posts, setPosts] = useState<PostSummary[]>([]);
   const [states, setStates] = useState<CatalogItem[]>([]);
@@ -111,7 +116,11 @@ export default function PostsPage() {
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [status, setStatus] = useState("all");
+  // The status filter holds a state `code` (UPLOADED, PUBLISHED...), so links
+  // like /posts?status=UPLOADED work before the catalog is loaded.
+  const [status, setStatus] = useState(
+    () => searchParams.get("status") ?? "all"
+  );
   const [category, setCategory] = useState("all");
   const [type, setType] = useState("all");
 
@@ -166,8 +175,18 @@ export default function PostsPage() {
     return () => clearTimeout(timeout);
   }, [search]);
 
+  // null while the states catalog hasn't arrived yet.
+  const statusId = useMemo(() => {
+    if (status === "all") return "all";
+    const match = states.find((state) => state.code === status);
+    return match ? String(match.id) : null;
+  }, [status, states]);
+
   const loadPosts = useCallback(
     async (signal: AbortSignal) => {
+      // Wait for the catalog instead of loading an unfiltered list first.
+      if (statusId === null && !catalogError) return;
+
       setLoading(true);
       setError(null);
 
@@ -180,8 +199,8 @@ export default function PostsPage() {
           params.set("text", debouncedSearch);
         }
 
-        if (status !== "all") {
-          params.set("status_id", status);
+        if (statusId !== null && statusId !== "all") {
+          params.set("status_id", statusId);
         }
 
         if (category !== "all") {
@@ -224,7 +243,7 @@ export default function PostsPage() {
         if (!signal.aborted) setLoading(false);
       }
     },
-    [page, debouncedSearch, status, category, type]
+    [page, debouncedSearch, statusId, catalogError, category, type]
   );
 
   useEffect(() => {
@@ -256,6 +275,12 @@ export default function PostsPage() {
     };
   };
 
+  const hasFilters =
+    search !== "" ||
+    status !== "all" ||
+    category !== "all" ||
+    type !== "all";
+
   const resetFilters = () => {
     setSearch("");
     setDebouncedSearch("");
@@ -267,31 +292,31 @@ export default function PostsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            Publicaciones
-          </h1>
-          <p className="mt-1 text-muted-foreground">
-            Consulta, revisión y validación de publicaciones.
-          </p>
-        </div>
-
+      <PageHeader
+        title="Publicaciones"
+        description="Consulta, revisión y validación de publicaciones."
+      >
         <Button
           variant="outline"
           onClick={() => setReloadKey((value) => value + 1)}
           disabled={loading}
         >
-          <RefreshCw className="mr-2 size-4" />
+          <RefreshCw
+            data-icon="inline-start"
+            className={loading ? "animate-spin" : ""}
+          />
           Actualizar
         </Button>
-      </div>
+      </PageHeader>
 
       <Card>
-        <CardContent className="space-y-5 pt-6">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Search
+                className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
               <Input
                 type="search"
                 aria-label="Buscar publicaciones"
@@ -313,7 +338,7 @@ export default function PostsPage() {
               }}
               disabled={catalogError}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="w-full" aria-label="Filtrar por estado">
                 <SelectValue placeholder="Estado" />
               </SelectTrigger>
               <SelectContent>
@@ -325,7 +350,7 @@ export default function PostsPage() {
                   .map((state) => (
                     <SelectItem
                       key={state.id}
-                      value={String(state.id)}
+                      value={state.code ?? String(state.id)}
                     >
                       {state.name}
                     </SelectItem>
@@ -341,7 +366,7 @@ export default function PostsPage() {
               }}
               disabled={catalogError}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="w-full" aria-label="Filtrar por categoría">
                 <SelectValue placeholder="Categoría" />
               </SelectTrigger>
               <SelectContent>
@@ -367,7 +392,7 @@ export default function PostsPage() {
               }}
               disabled={catalogError}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="w-full" aria-label="Filtrar por tipo de fraude">
                 <SelectValue placeholder="Tipo de fraude" />
               </SelectTrigger>
               <SelectContent>
@@ -387,15 +412,16 @@ export default function PostsPage() {
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground" aria-live="polite">
               {loading
                 ? "Cargando publicaciones..."
-                : `${totalPosts} publicaciones encontradas`}
+                : `${totalPosts.toLocaleString("es-MX")} publicaciones encontradas`}
             </p>
 
             <Button
               variant="ghost"
               size="sm"
+              disabled={!hasFilters}
               onClick={resetFilters}
             >
               Limpiar filtros
@@ -421,14 +447,16 @@ export default function PostsPage() {
           <div className="overflow-x-auto rounded-lg border">
             <Table>
               <TableHeader>
-                <TableRow className="bg-slate-50">
+                <TableRow>
                   <TableHead>Publicación</TableHead>
                   <TableHead>Autor</TableHead>
                   <TableHead>Categoría</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead>Validación</TableHead>
                   <TableHead>Fecha</TableHead>
-                  <TableHead className="w-8" />
+                  <TableHead className="w-8">
+                    <span className="sr-only">Abrir</span>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
 
@@ -465,9 +493,9 @@ export default function PostsPage() {
                             router.push(`/posts/${post.id}`);
                           }
                         }}
-                        className="cursor-pointer transition-colors hover:bg-emerald-50/50 focus-visible:outline-2 focus-visible:outline-emerald-600"
+                        className="cursor-pointer transition-colors hover:bg-emerald-50/50 focus-visible:outline-2 focus-visible:outline-ring"
                       >
-                        <TableCell className="max-w-xs font-medium">
+                        <TableCell className="max-w-xs font-medium text-slate-900">
                           <span className="block truncate">
                             {post.title || "Sin título"}
                           </span>
@@ -485,26 +513,25 @@ export default function PostsPage() {
                         </TableCell>
 
                         <TableCell>
-                          <Badge
-                            variant="secondary"
-                            className={
-                              statusStyles[postStatus.code] ?? ""
-                            }
-                          >
-                            {postStatus.label}
-                          </Badge>
+                          <PostStatusBadge
+                            code={postStatus.code}
+                            fallback={postStatus.label}
+                          />
                         </TableCell>
 
                         <TableCell>
                           <FraudBadge value={post.is_fraud} />
                         </TableCell>
 
-                        <TableCell className="text-muted-foreground">
+                        <TableCell className="whitespace-nowrap text-slate-700">
                           {formatDate(post.published_at)}
                         </TableCell>
 
                         <TableCell>
-                          <ChevronRight className="size-4 text-muted-foreground" />
+                          <ChevronRight
+                            className="size-4 text-muted-foreground"
+                            aria-hidden="true"
+                          />
                         </TableCell>
                       </TableRow>
                     );
@@ -538,7 +565,7 @@ export default function PostsPage() {
                 disabled={loading || page <= 1}
                 onClick={() => setPage((current) => current - 1)}
               >
-                <ChevronLeft className="size-4" />
+                <ChevronLeft data-icon="inline-start" />
                 Anterior
               </Button>
 
@@ -550,7 +577,7 @@ export default function PostsPage() {
                 onClick={() => setPage((current) => current + 1)}
               >
                 Siguiente
-                <ChevronRight className="size-4" />
+                <ChevronRight data-icon="inline-end" />
               </Button>
             </div>
           </div>

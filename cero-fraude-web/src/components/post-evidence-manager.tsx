@@ -165,9 +165,11 @@ export function PostEvidenceManager({
     <>
       <Card>
         <CardHeader>
-          <CardTitle>Evidencias</CardTitle>
+          <CardTitle className="text-base">Evidencias</CardTitle>
           <CardDescription>
-            Consulta y administración de archivos adjuntos.
+            {localEvidences.length === 1
+              ? "1 archivo adjunto"
+              : `${localEvidences.length} archivos adjuntos`}
           </CardDescription>
         </CardHeader>
 

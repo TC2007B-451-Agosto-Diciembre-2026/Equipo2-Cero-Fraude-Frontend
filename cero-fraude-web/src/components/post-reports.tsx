@@ -148,8 +148,8 @@ export function PostReports({ postId }: Props) {
     <>
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Flag className="size-5 text-emerald-700" />
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Flag className="size-4 text-slate-700" aria-hidden="true" />
             Reportes recibidos
           </CardTitle>
           <CardDescription>

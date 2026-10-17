@@ -13,6 +13,7 @@ import {
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { PageHeader } from "@/components/page-header";
 import {
   getReportReasonName,
   type Report,
@@ -147,32 +148,26 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Reportes
-          </h1>
-
-          <p className="mt-1 text-sm text-muted-foreground">
-            Reportes enviados por usuarios sobre publicaciones visibles.
-          </p>
-        </div>
-
+      <PageHeader
+        title="Reportes"
+        description="Reportes enviados por usuarios sobre publicaciones visibles."
+      >
         <Button
           variant="outline"
           onClick={refreshReports}
           disabled={loading}
         >
           <RefreshCw
-            className={`mr-2 size-4 ${loading ? "animate-spin" : ""}`}
+            data-icon="inline-start"
+            className={loading ? "animate-spin" : ""}
           />
           Actualizar
         </Button>
-      </div>
+      </PageHeader>
 
       <Card>
-        <CardContent className="space-y-4 pt-6">
-          <div className="overflow-hidden rounded-lg border">
+        <CardContent className="space-y-4">
+          <div className="overflow-x-auto rounded-lg border">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -181,7 +176,9 @@ export default function ReportsPage() {
                   <TableHead>Motivo</TableHead>
                   <TableHead>Información</TableHead>
                   <TableHead>Reportante</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
+                  <TableHead>
+                    <span className="sr-only">Acciones</span>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
 
@@ -223,7 +220,10 @@ export default function ReportsPage() {
                       colSpan={COLUMN_COUNT}
                       className="py-12 text-center"
                     >
-                      <Flag className="mx-auto mb-3 size-8 text-muted-foreground" />
+                      <Flag
+                        className="mx-auto mb-3 size-6 text-muted-foreground"
+                        aria-hidden="true"
+                      />
                       <p className="text-sm text-muted-foreground">
                         No hay reportes pendientes.
                       </p>
@@ -232,14 +232,14 @@ export default function ReportsPage() {
                 ) : (
                   reports.map((report) => (
                     <TableRow key={report.id}>
-                      <TableCell className="font-medium">
+                      <TableCell className="font-medium text-slate-900">
                         #{report.id}
                       </TableCell>
 
                       <TableCell>
                         <Link
                           href={`/posts/${report.post}`}
-                          className="font-medium text-emerald-700 hover:underline"
+                          className="font-medium whitespace-nowrap text-emerald-800 hover:underline"
                         >
                           Publicación #{report.post}
                         </Link>
@@ -254,10 +254,7 @@ export default function ReportsPage() {
                         </Badge>
                       </TableCell>
 
-                      <TableCell
-                        className="max-w-xs truncate"
-                        title={report.information ?? undefined}
-                      >
+                      <TableCell className="min-w-56 whitespace-normal text-slate-800">
                         {report.information ?? (
                           <span className="text-muted-foreground">
                             Sin información adicional
@@ -268,7 +265,7 @@ export default function ReportsPage() {
                       <TableCell>
                         <Link
                           href={`/users/${report.user}`}
-                          className="text-emerald-700 hover:underline"
+                          className="font-medium whitespace-nowrap text-emerald-800 hover:underline"
                         >
                           Ver usuario
                         </Link>
@@ -278,11 +275,11 @@ export default function ReportsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="text-destructive hover:text-destructive"
+                          className="text-red-700 hover:bg-red-50 hover:text-red-800"
                           aria-label={`Descartar reporte #${report.id}`}
                           onClick={() => setDeleteTarget(report)}
                         >
-                          <Trash2 className="mr-1 size-4" />
+                          <Trash2 data-icon="inline-start" />
                           Descartar
                         </Button>
                       </TableCell>
@@ -339,7 +336,9 @@ export default function ReportsPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Descartar reporte?</AlertDialogTitle>
+            <AlertDialogTitle>
+              ¿Descartar el reporte #{deleteTarget?.id}?
+            </AlertDialogTitle>
             <AlertDialogDescription>
               El reporte se eliminará de forma permanente. La
               publicación no se modifica.

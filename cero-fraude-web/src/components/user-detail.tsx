@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -24,6 +23,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 import { api } from "@/lib/api";
+import { UserStatusBadge } from "@/components/user-status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -64,6 +64,30 @@ function getErrorMessage(error: unknown) {
   return "No fue posible consultar el usuario.";
 }
 
+function formatDate(value: string | undefined) {
+  if (!value) return "No disponible";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "No disponible";
+
+  return new Intl.DateTimeFormat("es-MX", {
+    dateStyle: "medium",
+  }).format(date);
+}
+
+function BackLink() {
+  return (
+    <Link
+      href="/users"
+      className="inline-flex items-center gap-1 text-sm text-slate-700 hover:text-slate-900"
+    >
+      <ArrowLeft className="size-4" aria-hidden="true" />
+      Volver a usuarios
+    </Link>
+  );
+}
+
 export function UserDetail({ userId }: Readonly<Props>) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -86,60 +110,59 @@ export function UserDetail({ userId }: Readonly<Props>) {
     }
   }, [userId]);
 
-  
-    async function toggleUserStatus() {
+  async function toggleUserStatus() {
     if (!user || saving || currentUserId === null || currentUserId === user.id) {
-        return;
-        }
+      return;
+    }
 
     const nextStatus = !user.is_active;
 
     setSaving(true);
 
     try {
-        const response = await api.patch<User>(
+      const response = await api.patch<User>(
         `/users/${user.id}`,
         {
-            is_active: nextStatus,
+          is_active: nextStatus,
         }
-        );
+      );
 
-        setUser(response.data);
-        setConfirmOpen(false);
+      setUser(response.data);
+      setConfirmOpen(false);
 
-        toast.success(
+      toast.success(
         nextStatus
-            ? "Cuenta activada correctamente"
-            : "Cuenta desactivada correctamente"
-        );
+          ? `${user.username} activado`
+          : `${user.username} desactivado`
+      );
     } catch (error) {
-        toast.error(getErrorMessage(error));
+      toast.error(getErrorMessage(error));
     } finally {
-        setSaving(false);
+      setSaving(false);
     }
-    }
-
+  }
 
   useEffect(() => {
     void loadUser();
   }, [loadUser]);
-  useEffect(() => {
-  async function loadCurrentUser() {
-    try {
-      const response = await api.get<{ id: string }>("/users/me");
-      setCurrentUserId(response.data.id);
-    } catch {
-      setCurrentUserId(null);
-    }
-  }
 
-  void loadCurrentUser();
-}, []);
+  useEffect(() => {
+    async function loadCurrentUser() {
+      try {
+        const response = await api.get<{ id: string }>("/users/me");
+        setCurrentUserId(response.data.id);
+      } catch {
+        setCurrentUserId(null);
+      }
+    }
+
+    void loadCurrentUser();
+  }, []);
 
   if (loading) {
     return (
       <div className="space-y-6">
-        <Skeleton className="h-12 w-64" />
+        <Skeleton className="h-14 w-72" />
         <Skeleton className="h-28 w-full" />
         <Skeleton className="h-72 w-full" />
       </div>
@@ -149,20 +172,15 @@ export function UserDetail({ userId }: Readonly<Props>) {
   if (error || !user) {
     return (
       <div className="space-y-4">
-        <Button variant="ghost" asChild>
-          <Link href="/users">
-            <ArrowLeft className="mr-2 size-4" />
-            Volver a usuarios
-          </Link>
-        </Button>
+        <BackLink />
 
         <Card>
-          <CardContent className="space-y-4 pt-6">
+          <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
             <p role="alert" className="text-sm text-destructive">
               {error ?? "No se encontró el usuario."}
             </p>
 
-            <Button variant="outline" onClick={() => void loadUser()}>
+            <Button variant="outline" size="sm" onClick={() => void loadUser()}>
               Reintentar
             </Button>
           </CardContent>
@@ -176,94 +194,102 @@ export function UserDetail({ userId }: Readonly<Props>) {
 
   return (
     <>
-    <div className="space-y-6">
-      <Button variant="ghost" asChild>
-        <Link href="/users">
-          <ArrowLeft className="mr-2 size-4" />
-          Volver a usuarios
-        </Link>
-      </Button>
+      <div className="space-y-6">
+        <div className="space-y-3">
+          <BackLink />
 
-      <div className="flex flex-wrap items-center gap-4">
-        <div className="flex size-14 items-center justify-center rounded-full bg-muted">
-          <UserRound className="size-7 text-muted-foreground" />
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-4">
+              <div
+                aria-hidden="true"
+                className="flex size-14 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-700"
+              >
+                <UserRound className="size-6" />
+              </div>
+
+              <div className="min-w-0">
+                <h1 className="truncate text-2xl font-semibold tracking-tight text-slate-900">
+                  {user.username}
+                  {isOwnAccount && (
+                    <Badge variant="outline" className="ml-2 align-middle">
+                      Tú
+                    </Badge>
+                  )}
+                </h1>
+
+                <p className="break-all text-sm text-muted-foreground">
+                  {user.email}
+                </p>
+              </div>
+            </div>
+
+            <UserStatusBadge active={isActive} />
+          </div>
         </div>
 
-        <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-semibold">
-            {user.username}
-          </h1>
+        <div className="grid items-start gap-4 lg:grid-cols-3">
+          <div className="space-y-4 lg:col-span-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Resumen de actividad</CardTitle>
+                <CardDescription>
+                  Actividad relacionada con las publicaciones
+                  creadas por este usuario.
+                </CardDescription>
+              </CardHeader>
 
-          <p className="break-all text-sm text-muted-foreground">
-            {user.email}
-          </p>
-        </div>
+              <CardContent className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-lg border p-4">
+                  <p className="text-sm text-muted-foreground">
+                    Publicaciones creadas
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-slate-900">
+                    Dato no disponible
+                  </p>
+                </div>
 
-        <Badge variant={isActive ? "default" : "secondary"}>
-          {isActive ? "Activo" : "Inactivo"}
-        </Badge>
-      </div>
+                <div className="rounded-lg border p-4">
+                  <p className="text-sm text-muted-foreground">
+                    Reportes recibidos
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-slate-900">
+                    Dato no disponible
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
 
-      <div className="grid items-start gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Resumen de actividad</CardTitle>
-              <CardDescription>
-                Actividad relacionada con las publicaciones
-                creadas por este usuario.
-              </CardDescription>
-            </CardHeader>
-
-            <CardContent className="grid gap-4 sm:grid-cols-2">
-              <div className="rounded-lg border p-4">
-                <p className="text-sm text-muted-foreground">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <FileText
+                    className="size-4 text-slate-700"
+                    aria-hidden="true"
+                  />
                   Publicaciones creadas
-                </p>
-                <p className="mt-2 text-sm font-medium">
-                  Pendiente de consulta
-                </p>
-              </div>
+                </CardTitle>
 
-              <div className="rounded-lg border p-4">
-                <p className="text-sm text-muted-foreground">
-                  Reportes recibidos
-                </p>
-                <p className="mt-2 text-sm font-medium">
-                  Dato no disponible
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+                <CardDescription>
+                  Publicaciones registradas por este usuario.
+                </CardDescription>
+              </CardHeader>
+
+              <CardContent>
+                <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                  El backend todavía no permite filtrar publicaciones
+                  por autor.
+                </div>
+              </CardContent>
+            </Card>
+          </div>
 
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="size-5" />
-                Publicaciones creadas
-              </CardTitle>
-
-              <CardDescription>
-                Publicaciones registradas por este usuario.
-              </CardDescription>
-            </CardHeader>
-
-            <CardContent>
-              <div className="rounded-lg border border-dashed p-6 text-center">
-                <p className="text-sm text-muted-foreground">
-                  Pendiente de conectar la consulta de publicaciones
-                  de este usuario.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="lg:col-span-1">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <ShieldCheck className="size-5" />
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ShieldCheck
+                  className="size-4 text-slate-700"
+                  aria-hidden="true"
+                />
                 Administración de cuenta
               </CardTitle>
 
@@ -272,103 +298,99 @@ export function UserDetail({ userId }: Readonly<Props>) {
               </CardDescription>
             </CardHeader>
 
-            <CardContent className="space-y-5">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm text-muted-foreground">
-                  Estado
-                </span>
-
-                <Badge variant={isActive ? "default" : "secondary"}>
-                  {isActive ? "Activa" : "Inactiva"}
-                </Badge>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-muted-foreground">Estado</span>
+                <UserStatusBadge active={isActive} />
               </div>
 
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm text-muted-foreground">
-                  Rol
-                </span>
-
-                <span className="text-sm font-medium">
-                  {user.role_id === 1
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-muted-foreground">Rol</span>
+                <span className="font-medium text-slate-900">
+                  {user.role_id === 2
                     ? "Administrador"
-                    : `Rol ${user.role_id}`}
+                    : user.role_id === 1
+                      ? "Usuario"
+                      : `Rol ${user.role_id}`}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-muted-foreground">Registro</span>
+                <span className="font-medium text-slate-900">
+                  {formatDate(user.created_at)}
                 </span>
               </div>
 
               <div className="space-y-2 border-t pt-4">
-                <p className="text-sm text-muted-foreground">
-                  {isActive
-                    ? "Puedes desactivar esta cuenta para impedir su acceso."
-                    : "Puedes reactivar esta cuenta para permitir nuevamente su acceso."}
-                </p>
-
-                
-                <Button
-                variant="outline"
-                className={
-                    isActive
-                    ? "w-full text-destructive hover:text-destructive"
-                    : "w-full"
-                }
-                disabled={saving || currentUserId === null || isOwnAccount}
-                onClick={() => setConfirmOpen(true)}
-                >
-                {isOwnAccount
-                    ? "No puedes modificar tu propia cuenta"
+                <p className="text-sm text-slate-700">
+                  {isOwnAccount
+                    ? "No puedes cambiar el estado de tu propia cuenta."
                     : isActive
-                    ? "Desactivar cuenta"
-                    : "Activar cuenta"}
-                </Button>
-
-
-                <p className="text-xs text-muted-foreground">
-                  La acción se habilitará al confirmar los
-                  campos de UpdateUserDto.
+                      ? "Puedes desactivar esta cuenta para impedir su acceso."
+                      : "Puedes activar esta cuenta para devolverle el acceso."}
                 </p>
+
+                <Button
+                  variant="outline"
+                  className={
+                    isActive
+                      ? "w-full border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+                      : "w-full"
+                  }
+                  disabled={saving || currentUserId === null || isOwnAccount}
+                  onClick={() => setConfirmOpen(true)}
+                >
+                  {isActive ? "Desactivar cuenta" : "Activar cuenta"}
+                </Button>
               </div>
             </CardContent>
           </Card>
         </div>
       </div>
-    </div>
-    
-<AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-  <AlertDialogContent>
-    <AlertDialogHeader>
-      <AlertDialogTitle>
-        {isActive
-          ? "¿Desactivar esta cuenta?"
-          : "¿Activar esta cuenta?"}
-      </AlertDialogTitle>
 
-      <AlertDialogDescription>
-        {isActive
-          ? `Se desactivará la cuenta de ${user.username}.`
-          : `Se activará nuevamente la cuenta de ${user.username}.`}
-      </AlertDialogDescription>
-    </AlertDialogHeader>
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {isActive
+                ? `¿Desactivar a ${user.username}?`
+                : `¿Activar a ${user.username}?`}
+            </AlertDialogTitle>
 
-    <AlertDialogFooter>
-      <AlertDialogCancel disabled={saving}>
-        Cancelar
-      </AlertDialogCancel>
+            <AlertDialogDescription>
+              {isActive
+                ? "No podrá iniciar sesión hasta que lo vuelvas a activar. Sus publicaciones se conservan."
+                : "Podrá volver a iniciar sesión."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
 
-      <AlertDialogAction
-        disabled={saving}
-        onClick={(event) => {
-          event.preventDefault();
-          void toggleUserStatus();
-        }}
-      >
-        {saving
-          ? "Guardando..."
-          : isActive
-            ? "Desactivar cuenta"
-            : "Activar cuenta"}
-      </AlertDialogAction>
-    </AlertDialogFooter>
-  </AlertDialogContent>
-</AlertDialog>
-</>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>
+              Cancelar
+            </AlertDialogCancel>
+
+            <AlertDialogAction
+              disabled={saving}
+              className={
+                isActive
+                  ? "bg-destructive text-white hover:bg-destructive/90"
+                  : undefined
+              }
+              onClick={(event) => {
+                event.preventDefault();
+                void toggleUserStatus();
+              }}
+            >
+              {saving
+                ? "Guardando..."
+                : isActive
+                  ? "Desactivar"
+                  : "Activar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
