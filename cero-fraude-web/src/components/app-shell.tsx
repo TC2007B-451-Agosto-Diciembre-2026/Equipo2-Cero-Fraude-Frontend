@@ -1,4 +1,3 @@
-
 "use client";
 
 import { usePathname } from "next/navigation";
@@ -21,13 +20,23 @@ export function AppShell({
   return (
     <TooltipProvider>
       <SidebarProvider>
+        <a
+          href="#contenido"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow"
+        >
+          Saltar al contenido
+        </a>
+
         <AppSidebar />
+
         <SidebarInset className="min-w-0 bg-slate-50">
           <AppHeader />
-          <main className="flex-1 p-4 md:p-6 lg:p-8">
-            <div className="mx-auto w-full max-w-7xl">
-              {children}
-            </div>
+          <main
+            id="contenido"
+            tabIndex={-1}
+            className="w-full flex-1 p-4 outline-none md:p-6 lg:p-8"
+          >
+            {children}
           </main>
         </SidebarInset>
       </SidebarProvider>

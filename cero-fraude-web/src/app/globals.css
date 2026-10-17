@@ -25,12 +25,14 @@
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  /* slate-600: secondary text keeps a 7:1 contrast on white */
+  --muted-foreground: oklch(0.446 0.043 257.281);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  /* emerald-700: focus rings use the brand color */
+  --ring: oklch(0.508 0.118 165.612);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -63,7 +65,10 @@ button {
 
   --font-heading: var(--font-sans);
 
-  --font-sans: var(--font-sans);
+  /* System sans stack (was var(--font-sans), a self-reference that made the
+     whole panel fall back to the browser's serif font) */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
 
   --color-sidebar-ring: var(--sidebar-ring);
 
@@ -216,5 +221,12 @@ button {
   }
   html {
     @apply font-sans;
+  }
+
+  /* Form fields get a darker border (slate-400) so they stand out from cards */
+  [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="select-trigger"] {
+    border-color: oklch(0.704 0.04 256.788);
   }
 }

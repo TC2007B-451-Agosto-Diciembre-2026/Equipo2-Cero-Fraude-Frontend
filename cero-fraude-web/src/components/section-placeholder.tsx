@@ -1,4 +1,6 @@
+import { Inbox } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 
 type SectionPlaceholderProps = {
@@ -12,20 +14,12 @@ export function SectionPlaceholder({
 }: Readonly<SectionPlaceholderProps>) {
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">
-          {title}
-        </h1>
-        <p className="mt-1 text-muted-foreground">
-          {description}
-        </p>
-      </div>
+      <PageHeader title={title} description={description} />
 
       <Card>
-        <CardContent className="flex min-h-64 items-center justify-center">
-          <p className="text-sm text-muted-foreground">
-            Sección pendiente de implementación.
-          </p>
+        <CardContent className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground">
+          <Inbox className="size-6" aria-hidden="true" />
+          <p className="text-sm">Sección pendiente de implementación.</p>
         </CardContent>
       </Card>
     </div>
