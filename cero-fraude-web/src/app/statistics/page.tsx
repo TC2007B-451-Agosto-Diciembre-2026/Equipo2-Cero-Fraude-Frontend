@@ -1,63 +1,45 @@
-
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import axios from "axios";
 import {
+  CheckCircle2,
   Clock3,
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
-  CheckCircle2,
-  BarChart3,
 } from "lucide-react";
 
-import { api } from "@/lib/api";
-import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+  loadContentStats,
+  loadModerationStats,
+  loadReportStats,
+  loadUserStats,
+  VISIBLE_STATUSES,
+} from "@/lib/statistics";
+import { postStatusLabels } from "@/components/post-status-badge";
+import { PageHeader } from "@/components/page-header";
+import {
+  Bar,
+  ColumnChart,
+  formatNumber,
+  Heatmap,
+  Mini,
+  Panel,
+  SectionHeading,
+  StatKpi,
+} from "@/components/statistics-charts";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
-type PostStatus = {
-  id: number;
-  code: string;
-  name: string;
-};
-
-type PostSummary = {
-  id: number;
-  status_id: number;
-  is_fraud: boolean | number | null;
-};
-
-type PostsResponse = {
-  data: PostSummary[];
-  page: number;
-  total_pages: number;
-  total: number;
-};
-
-type Statistics = {
-  uploaded: number;
-  published: number;
-  validated: number;
-  rejected: number;
-  fraud: number;
-  notFraud: number;
-  unclassified: number;
-};
-
-const statusCodes = [
-  "UPLOADED",
-  "PUBLISHED",
-  "VALIDATED",
-  "REJECTED",
-] as const;
+// Same hues as the post status badges (700 steps, readable on white).
+const statusColors = {
+  UPLOADED: { bar: "bg-amber-700", rgb: "180,83,9" },
+  PUBLISHED: { bar: "bg-blue-700", rgb: "29,78,216" },
+  VALIDATED: { bar: "bg-emerald-700", rgb: "4,120,87" },
+  REJECTED: { bar: "bg-red-700", rgb: "185,28,28" },
+} as const;
 
 function getErrorMessage(error: unknown) {
   if (axios.isAxiosError(error)) {
@@ -69,441 +51,419 @@ function getErrorMessage(error: unknown) {
 
   if (error instanceof Error) return error.message;
 
-  return "No fue posible obtener las estadísticas.";
+  return "No fue posible obtener los datos.";
 }
 
-export default function StatisticsPage() {
-  const [statistics, setStatistics] = useState<Statistics | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
+type LoadState<T> = {
+  key: number;
+  data: T | null;
+  error: string | null;
+};
 
-  const loadStatistics = useCallback(async (signal: AbortSignal) => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const statesResponse = await api.get<PostStatus[]>(
-        "/states",
-        { signal }
-      );
-
-      const states = statesResponse.data;
-
-      const statusIds = Object.fromEntries(
-        states.map((state) => [state.code, state.id])
-      ) as Record<string, number>;
-
-      for (const code of statusCodes) {
-        if (statusIds[code] === undefined) {
-          throw new Error(
-            `No se encontró el estado ${code} en el catálogo.`
-          );
-        }
-      }
-
-      async function fetchPage(statusId: number, page: number) {
-        const response = await api.get<PostsResponse>("/posts", {
-          params: {
-            page,
-            status_id: statusId,
-          },
-          signal,
-        });
-
-        return response.data;
-      }
-
-      // Consulta la primera página de cada estado.
-      // "total" permite contar sin descargar todos sus registros.
-      const [uploaded, published, validated, rejected] =
-        await Promise.all([
-          fetchPage(statusIds.UPLOADED, 1),
-          fetchPage(statusIds.PUBLISHED, 1),
-          fetchPage(statusIds.VALIDATED, 1),
-          fetchPage(statusIds.REJECTED, 1),
-        ]);
-
-      // Para distinguir fraude/no fraude necesitamos leer
-      // todas las publicaciones validadas.
-      const validatedPosts: PostSummary[] = [...validated.data];
-
-      const totalValidatedPages = Math.max(
-        1,
-        validated.total_pages
-      );
-
-      // Consultas en grupos para evitar demasiadas peticiones
-      // simultáneas cuando existan muchas publicaciones.
-      for (let start = 2; start <= totalValidatedPages; start += 5) {
-        const end = Math.min(
-          start + 4,
-          totalValidatedPages
-        );
-
-        const pageNumbers = Array.from(
-          { length: end - start + 1 },
-          (_, index) => start + index
-        );
-
-        const pages = await Promise.all(
-          pageNumbers.map((page) =>
-            fetchPage(statusIds.VALIDATED, page)
-          )
-        );
-
-        for (const result of pages) {
-          validatedPosts.push(...result.data);
-        }
-      }
-
-      if (signal.aborted) return;
-
-      const fraud = validatedPosts.filter(
-        (post) => post.is_fraud === true || post.is_fraud === 1
-      ).length;
-
-      const notFraud = validatedPosts.filter(
-        (post) => post.is_fraud === false || post.is_fraud === 0
-      ).length;
-
-      const unclassified =
-        validatedPosts.length - fraud - notFraud;
-
-      setStatistics({
-        uploaded: uploaded.total,
-        published: published.total,
-        validated: validated.total,
-        rejected: rejected.total,
-        fraud,
-        notFraud,
-        unclassified,
-      });
-    } catch (error) {
-      if (signal.aborted || axios.isCancel(error)) return;
-
-      setStatistics(null);
-      setError(getErrorMessage(error));
-    } finally {
-      if (!signal.aborted) setLoading(false);
-    }
-  }, []);
+// Runs one section loader per refresh. `loading` is derived from the key
+// (state is only set in the promise callbacks), like post-reports.tsx.
+function useSection<T>(
+  loader: (signal: AbortSignal) => Promise<T>,
+  refreshKey: number
+) {
+  const [state, setState] = useState<LoadState<T> | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
 
-    void loadStatistics(controller.signal);
+    loader(controller.signal)
+      .then((data) => setState({ key: refreshKey, data, error: null }))
+      .catch((error) => {
+        if (controller.signal.aborted || axios.isCancel(error)) return;
+
+        setState({
+          key: refreshKey,
+          data: null,
+          error: getErrorMessage(error),
+        });
+      });
 
     return () => controller.abort();
-  }, [loadStatistics, refreshKey]);
+  }, [loader, refreshKey]);
 
-  const metrics = statistics
+  const loading = state?.key !== refreshKey;
+
+  return {
+    loading,
+    data: loading ? null : (state?.data ?? null),
+    error: loading ? null : (state?.error ?? null),
+  };
+}
+
+export default function StatisticsPage() {
+  const [refreshKey, setRefreshKey] = useState(0);
+  const refresh = () => setRefreshKey((current) => current + 1);
+
+  const moderation = useSection(loadModerationStats, refreshKey);
+  const content = useSection(loadContentStats, refreshKey);
+  const reports = useSection(loadReportStats, refreshKey);
+  const users = useSection(loadUserStats, refreshKey);
+
+  const anyLoading =
+    moderation.loading || content.loading || reports.loading || users.loading;
+
+  const mod = moderation.data;
+  const validatedTotal = mod ? mod.fraud + mod.notFraud + mod.unclassified : 0;
+
+  const workload = mod
     ? [
-        {
-          title: "Pendientes de revisión",
-          value: statistics.uploaded,
-          description: "Publicaciones subidas",
-          icon: Clock3,
-        },
-        {
-          title: "Pendientes de validación",
-          value: statistics.published,
-          description: "Publicaciones pendientes de validar",
-          icon: ShieldAlert,
-        },
-        {
-          title: "Fraudes confirmados",
-          value: statistics.fraud,
-          description: "Validadas como fraude",
-          icon: ShieldCheck,
-        },
-        {
-          title: "Validadas como no fraude",
-          value: statistics.notFraud,
-          description: "Validadas sin fraude",
-          icon: CheckCircle2,
-        },
-      ]
+        { code: "UPLOADED", label: "Pendientes de revisión" },
+        { code: "PUBLISHED", label: "Pendientes de validación" },
+        { code: "VALIDATED", label: "Validadas" },
+        { code: "REJECTED", label: "Rechazadas" },
+      ].map((item) => ({
+        ...item,
+        value: mod.byStatus[item.code as keyof typeof mod.byStatus],
+      }))
     : [];
+  const workloadMax = Math.max(...workload.map((item) => item.value), 0);
 
-  const moderationData = statistics
-    ? [
-        {
-          label: "Pendientes de revisión",
-          value: statistics.uploaded,
-        },
-        {
-          label: "Pendientes de validación",
-          value: statistics.published,
-        },
-        {
-          label: "Validadas",
-          value: statistics.validated,
-        },
-        {
-          label: "Rechazadas",
-          value: statistics.rejected,
-        },
-      ]
-    : [];
-
-  const maxModerationValue = Math.max(
-    1,
-    ...moderationData.map((item) => item.value)
-  );
-
-  const classifiedTotal = statistics
-    ? statistics.fraud + statistics.notFraud
+  const cont = content.data;
+  const withCategory = cont
+    ? cont.categories.reduce((sum, item) => sum + item.count, 0)
     : 0;
 
-  const fraudPercentage =
-    statistics && classifiedTotal > 0
-      ? (statistics.fraud / classifiedTotal) * 100
-      : 0;
-
-  const notFraudPercentage =
-    statistics && classifiedTotal > 0
-      ? (statistics.notFraud / classifiedTotal) * 100
-      : 0;
+  const rep = reports.data;
+  const usr = users.data;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Estadísticas
-          </h1>
-
-          <p className="mt-1 text-sm text-muted-foreground">
-            Seguimiento de publicaciones y resultados de moderación.
-          </p>
-        </div>
-
-        <Button
-          variant="outline"
-          disabled={loading}
-          onClick={() =>
-            setRefreshKey((current) => current + 1)
-          }
-        >
+    <div>
+      <PageHeader
+        title="Estadísticas"
+        description="Seguimiento de publicaciones, reportes y usuarios."
+      >
+        <Button variant="outline" onClick={refresh} disabled={anyLoading}>
           <RefreshCw
-            className={`mr-2 size-4 ${
-              loading ? "animate-spin" : ""
-            }`}
+            data-icon="inline-start"
+            className={anyLoading ? "animate-spin" : ""}
           />
           Actualizar
         </Button>
+      </PageHeader>
+
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatKpi
+          label="Pendientes de revisión"
+          value={mod?.byStatus.UPLOADED ?? null}
+          hint="Publicaciones subidas"
+          icon={Clock3}
+        />
+        <StatKpi
+          label="Pendientes de validación"
+          value={mod?.byStatus.PUBLISHED ?? null}
+          hint="Publicadas, sin validar"
+          icon={ShieldAlert}
+        />
+        <StatKpi
+          label="Fraudes confirmados"
+          value={mod?.fraud ?? null}
+          hint="Validadas como fraude"
+          icon={ShieldCheck}
+        />
+        <StatKpi
+          label="Validadas como no fraude"
+          value={mod?.notFraud ?? null}
+          hint="Validadas sin fraude"
+          icon={CheckCircle2}
+        />
       </div>
 
-      {error ? (
-        <Card>
-          <CardContent className="space-y-3 pt-6">
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-
-            <Button
-              variant="outline"
-              onClick={() =>
-                setRefreshKey((current) => current + 1)
+      <SectionHeading
+        title="Moderación"
+        description={
+          mod
+            ? `Estado actual de las ${formatNumber(mod.total)} publicaciones y resultado de las validaciones.`
+            : "Estado actual de las publicaciones y resultado de las validaciones."
+        }
+      />
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+        <Panel
+          title="Carga de trabajo"
+          description="Publicaciones por estado actual."
+          loading={moderation.loading}
+          error={moderation.error}
+          onRetry={refresh}
+          empty={mod?.total === 0}
+        >
+          {workload.map((item) => (
+            <Bar
+              key={item.code}
+              label={item.label}
+              value={item.value}
+              max={workloadMax}
+              colorClass={
+                statusColors[item.code as keyof typeof statusColors].bar
               }
+            />
+          ))}
+        </Panel>
+
+        <Panel
+          title="Resultados de validación"
+          description="Publicaciones validadas, clasificadas como fraude o no fraude."
+          loading={moderation.loading}
+          error={moderation.error}
+          onRetry={refresh}
+          empty={validatedTotal === 0}
+          skeletonRows={3}
+        >
+          {mod && (
+            <>
+              <Bar
+                label="Fraudes confirmados"
+                value={mod.fraud}
+                max={validatedTotal}
+                total={validatedTotal}
+                colorClass="bg-red-700"
+              />
+              <Bar
+                label="No fraude"
+                value={mod.notFraud}
+                max={validatedTotal}
+                total={validatedTotal}
+                colorClass="bg-emerald-700"
+              />
+              {mod.unclassified > 0 && (
+                <p className="flex items-start gap-2 text-xs text-amber-800">
+                  <ShieldAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                  {mod.unclassified}{" "}
+                  {mod.unclassified === 1
+                    ? "publicación validada no indica"
+                    : "publicaciones validadas no indican"}{" "}
+                  si es fraude.
+                </p>
+              )}
+              <div className="border-t pt-4">
+                <p className="text-xs text-muted-foreground">
+                  Publicaciones validadas
+                </p>
+                <p className="text-2xl font-bold text-slate-900 tabular-nums">
+                  {formatNumber(validatedTotal)}
+                </p>
+              </div>
+            </>
+          )}
+        </Panel>
+      </div>
+
+      <SectionHeading
+        title="Contenido"
+        description="Qué tipo de publicaciones se reciben."
+      />
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+        <Panel
+          title="Publicaciones por categoría"
+          description={
+            cont
+              ? `${formatNumber(withCategory)} de ${formatNumber(cont.total)} publicaciones tienen categoría.`
+              : "Publicaciones con cada categoría."
+          }
+          loading={content.loading}
+          error={content.error}
+          onRetry={refresh}
+          empty={withCategory === 0}
+          skeletonRows={6}
+        >
+          {cont?.categories.map((item) => (
+            <Bar
+              key={item.id}
+              label={item.name}
+              value={item.count}
+              max={cont.categories[0].count}
+              total={withCategory}
+            />
+          ))}
+        </Panel>
+
+        <Panel
+          title="Publicaciones por tipo de fraude"
+          description="Una publicación puede tener varios tipos, por eso la suma supera el total."
+          loading={content.loading}
+          error={content.error}
+          onRetry={refresh}
+          empty={cont?.types.every((item) => item.count === 0)}
+          skeletonRows={6}
+        >
+          {cont?.types.map((item) => (
+            <Bar
+              key={item.id}
+              label={item.name}
+              value={item.count}
+              max={cont.types[0].count}
+            />
+          ))}
+        </Panel>
+
+        <Panel
+          wide
+          title="Categoría por estado"
+          description="Cuántas publicaciones de cada categoría están en cada estado."
+          loading={content.loading}
+          error={content.error}
+          onRetry={refresh}
+          empty={withCategory === 0}
+          skeletonRows={6}
+        >
+          {cont && (
+            <Heatmap
+              rowHeader="Categoría"
+              columns={VISIBLE_STATUSES.map((code) => ({
+                label: postStatusLabels[code],
+                rgb: statusColors[code].rgb,
+              }))}
+              rows={cont.categories.map((category) => ({
+                label: category.name,
+                values: cont.matrix[category.id],
+              }))}
+            />
+          )}
+        </Panel>
+      </div>
+
+      <SectionHeading
+        title="Reportes"
+        description={
+          <>
+            Reportes de usuarios sobre publicaciones visibles.{" "}
+            <Link
+              href="/reports"
+              className="font-medium text-emerald-800 hover:underline"
             >
-              Reintentar
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {loading
-              ? Array.from({ length: 4 }).map((_, index) => (
-                  <Card key={index}>
-                    <CardContent className="space-y-3 pt-6">
-                      <Skeleton className="h-4 w-32" />
-                      <Skeleton className="h-9 w-20" />
-                      <Skeleton className="h-3 w-40" />
-                    </CardContent>
-                  </Card>
-                ))
-              : metrics.map((metric) => {
-                  const Icon = metric.icon;
-
-                  return (
-                    <Card key={metric.title}>
-                      <CardContent className="pt-6">
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm text-muted-foreground">
-                            {metric.title}
-                          </p>
-
-                          <Icon className="size-5 shrink-0 text-emerald-700" />
-                        </div>
-
-                        <p className="mt-3 text-3xl font-semibold tabular-nums">
-                          {metric.value.toLocaleString("es-MX")}
-                        </p>
-
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {metric.description}
-                        </p>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-          </div>
-
-          <div className="grid items-start gap-6 xl:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <BarChart3 className="size-5" />
-                  Carga de trabajo de moderación
-                </CardTitle>
-
-                <CardDescription>
-                  Distribución de publicaciones por estado actual.
-                </CardDescription>
-              </CardHeader>
-
-              <CardContent className="space-y-6">
-                {loading || !statistics ? (
-                  <Skeleton className="h-64 w-full" />
-                ) : (
-                  moderationData.map((item) => {
-                    const width =
-                      (item.value / maxModerationValue) * 100;
-
-                    return (
-                      <div key={item.label} className="space-y-2">
-                        <div className="flex justify-between gap-3 text-sm">
-                          <span>{item.label}</span>
-
-                          <span className="font-medium tabular-nums">
-                            {item.value.toLocaleString("es-MX")}
-                          </span>
-                        </div>
-
-                        <div className="h-3 overflow-hidden rounded-full bg-muted">
-                          <div
-                            className="h-full rounded-full bg-emerald-600"
-                            style={{ width: `${width}%` }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>
-                  Resultados de validación
-                </CardTitle>
-
-                <CardDescription>
-                  Distribución de publicaciones clasificadas
-                  como fraude o no fraude.
-                </CardDescription>
-              </CardHeader>
-
-              <CardContent className="space-y-6">
-                {loading || !statistics ? (
-                  <Skeleton className="h-64 w-full" />
-                ) : (
-                  <>
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span>Fraudes confirmados</span>
-                        <span className="font-medium tabular-nums">
-                          {statistics.fraud}
-                        </span>
-                      </div>
-
-                      <div className="h-4 overflow-hidden rounded-full bg-muted">
-                        <div
-                          className="h-full rounded-full bg-emerald-600"
-                          style={{
-                            width: `${fraudPercentage}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span>No fraude</span>
-                        <span className="font-medium tabular-nums">
-                          {statistics.notFraud}
-                        </span>
-                      </div>
-
-                      <div className="h-4 overflow-hidden rounded-full bg-muted">
-                        <div
-                          className="h-full rounded-full bg-slate-500"
-                          style={{
-                            width: `${notFraudPercentage}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="border-t pt-4">
-                      <p className="text-sm text-muted-foreground">
-                        Publicaciones clasificadas
-                      </p>
-
-                      <p className="mt-1 text-2xl font-semibold tabular-nums">
-                        {classifiedTotal.toLocaleString("es-MX")}
-                      </p>
-
-                      {statistics.unclassified > 0 && (
-                        <p className="mt-2 text-xs text-amber-700">
-                          {statistics.unclassified} publicaciones
-                          validadas no tienen un valor de
-                          fraude definido en los datos consultados.
-                        </p>
-                      )}
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Métricas de reportes</CardTitle>
-
-              <CardDescription>
-                Se incorporarán cuando estén disponibles
-                los endpoints de reportes.
-              </CardDescription>
-            </CardHeader>
-
-            <CardContent className="grid gap-4 sm:grid-cols-2">
-              <div className="rounded-lg border p-4">
-                <p className="text-sm text-muted-foreground">
-                  Reportes recibidos
-                </p>
-                <p className="mt-2 text-sm font-medium">
-                  Dato no disponible
-                </p>
+              Ver reportes
+            </Link>
+          </>
+        }
+      />
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+        <Panel
+          title="Reportes por motivo"
+          description={
+            rep
+              ? `Calculado con los ${formatNumber(rep.total)} reportes recibidos.`
+              : "Motivos que eligieron los usuarios al reportar."
+          }
+          loading={reports.loading}
+          error={reports.error}
+          onRetry={refresh}
+          empty={rep?.total === 0}
+          skeletonRows={6}
+        >
+          {rep && (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Mini label="Reportes recibidos" value={rep.total} hint="En total" />
+                <Mini
+                  label="Publicaciones reportadas"
+                  value={rep.reportedPosts}
+                  hint="Con al menos un reporte"
+                />
               </div>
+              {rep.byReason.map((item) => (
+                <Bar
+                  key={item.id}
+                  label={item.name}
+                  value={item.count}
+                  max={rep.byReason[0].count}
+                  total={rep.total}
+                />
+              ))}
+            </>
+          )}
+        </Panel>
 
-              <div className="rounded-lg border p-4">
-                <p className="text-sm text-muted-foreground">
-                  Publicaciones más reportadas
-                </p>
-                <p className="mt-2 text-sm font-medium">
-                  Dato no disponible
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </>
-      )}
+        <Panel
+          title="Publicaciones más reportadas"
+          description="Las 5 con más reportes."
+          loading={reports.loading}
+          error={reports.error}
+          onRetry={refresh}
+          empty={rep?.topPosts.length === 0}
+          skeletonRows={5}
+        >
+          <ol className="flex flex-col gap-2">
+            {rep?.topPosts.map((post, index) => (
+              <li
+                key={post.id}
+                className="flex items-center gap-3 rounded-lg border p-3"
+              >
+                <span
+                  aria-hidden="true"
+                  className="flex size-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-800"
+                >
+                  {index + 1}
+                </span>
+                <Link
+                  href={`/posts/${post.id}`}
+                  className="min-w-0 flex-1 hover:underline"
+                >
+                  <span className="block truncate text-sm font-medium text-slate-900">
+                    {post.title || "Sin título"}
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    Publicación #{post.id}
+                  </span>
+                </Link>
+                <Badge variant="secondary" className="bg-red-100 text-red-800">
+                  {post.count} {post.count === 1 ? "reporte" : "reportes"}
+                </Badge>
+              </li>
+            ))}
+          </ol>
+        </Panel>
+      </div>
+
+      <SectionHeading
+        title="Usuarios"
+        description="Cuentas registradas en Cero Fraude."
+      />
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+        <Panel
+          title="Cuentas"
+          description="Totales por rol y estado."
+          loading={users.loading}
+          error={users.error}
+          onRetry={refresh}
+          skeletonRows={2}
+        >
+          {usr && (
+            <div className="grid grid-cols-2 gap-3">
+              <Mini label="Usuarios registrados" value={usr.total} hint="En total" />
+              <Mini
+                label="Administradores"
+                value={usr.admins}
+                hint={`${formatNumber(usr.total - usr.admins)} usuarios`}
+              />
+              <Mini label="Cuentas activas" value={usr.active} hint="Con acceso" />
+              <Mini
+                label="Cuentas inactivas"
+                value={usr.total - usr.active}
+                hint="Sin acceso"
+              />
+            </div>
+          )}
+        </Panel>
+
+        <Panel
+          title="Registros por mes"
+          description="Cuentas creadas en los últimos 6 meses."
+          loading={users.loading}
+          error={users.error}
+          onRetry={refresh}
+          skeletonRows={3}
+        >
+          {usr && (
+            <ColumnChart
+              label="Registros por mes"
+              items={usr.registrationsByMonth}
+            />
+          )}
+        </Panel>
+      </div>
     </div>
   );
 }
