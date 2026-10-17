@@ -23,6 +23,14 @@ import {
 } from "@/components/ui/alert-dialog";
 
 import { api } from "@/lib/api";
+import {
+  formatUserDate,
+  getRoleIdByCode,
+  getRoleName,
+  type Role,
+  type User,
+  type UsersResponse,
+} from "@/lib/users";
 import { UserStatusBadge } from "@/components/user-status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,15 +42,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-
-type User = {
-  id: string;
-  username: string;
-  email: string;
-  is_active: boolean | number;
-  role_id: number;
-  created_at?: string;
-};
 
 type Props = {
   userId: string;
@@ -64,18 +63,6 @@ function getErrorMessage(error: unknown) {
   return "No fue posible consultar el usuario.";
 }
 
-function formatDate(value: string | undefined) {
-  if (!value) return "No disponible";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) return "No disponible";
-
-  return new Intl.DateTimeFormat("es-MX", {
-    dateStyle: "medium",
-  }).format(date);
-}
-
 function BackLink() {
   return (
     <Link
@@ -95,6 +82,11 @@ export function UserDetail({ userId }: Readonly<Props>) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [roles, setRoles] = useState<Role[]>([]);
+  // Used to never remove the last administrator (the backend allows it).
+  const [adminCount, setAdminCount] = useState<number | null>(null);
+  const [roleConfirmOpen, setRoleConfirmOpen] = useState(false);
+  const [adminCountKey, setAdminCountKey] = useState(0);
 
   const loadUser = useCallback(async () => {
     setLoading(true);
@@ -142,9 +134,70 @@ export function UserDetail({ userId }: Readonly<Props>) {
     }
   }
 
+  async function toggleAdminRole() {
+    if (!user || saving || currentUserId === user.id) return;
+
+    const adminRoleId = getRoleIdByCode(roles, "ADMIN");
+    const userRoleId = getRoleIdByCode(roles, "USER");
+
+    if (adminRoleId === null || userRoleId === null) return;
+
+    const makeAdmin = user.role_id !== adminRoleId;
+
+    setSaving(true);
+
+    try {
+      const response = await api.patch<User>(`/users/${user.id}`, {
+        role_id: makeAdmin ? adminRoleId : userRoleId,
+      });
+
+      setUser(response.data);
+      setRoleConfirmOpen(false);
+      setAdminCountKey((current) => current + 1);
+
+      toast.success(
+        makeAdmin
+          ? `${user.username} ahora es administrador`
+          : `${user.username} ya no es administrador`
+      );
+    } catch (error) {
+      setRoleConfirmOpen(false);
+      toast.error(getErrorMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   useEffect(() => {
     void loadUser();
   }, [loadUser]);
+
+  // Roles catalog (names and the ADMIN/USER IDs) plus how many admins exist.
+  useEffect(() => {
+    const controller = new AbortController();
+    const signal = controller.signal;
+
+    api
+      .get<Role[]>("/roles", { signal })
+      .then((response) => {
+        setRoles(response.data);
+
+        const adminRoleId = getRoleIdByCode(response.data, "ADMIN");
+        if (adminRoleId === null) return;
+
+        return api
+          .get<UsersResponse>("/users", {
+            params: { role_id: adminRoleId, page: 1 },
+            signal,
+          })
+          .then((users) => setAdminCount(users.data.total));
+      })
+      .catch(() => {
+        // Without roles the role action stays hidden.
+      });
+
+    return () => controller.abort();
+  }, [adminCountKey]);
 
   useEffect(() => {
     async function loadCurrentUser() {
@@ -191,6 +244,14 @@ export function UserDetail({ userId }: Readonly<Props>) {
 
   const isActive = Boolean(user.is_active);
   const isOwnAccount = currentUserId === user.id;
+  const isAdmin = user.role_id === getRoleIdByCode(roles, "ADMIN");
+  // Never on your own account, never the last admin, and only active
+  // accounts can be promoted.
+  const canChangeRole =
+    roles.length > 0 &&
+    currentUserId !== null &&
+    !isOwnAccount &&
+    (isAdmin ? adminCount !== null && adminCount > 1 : isActive);
 
   return (
     <>
@@ -307,18 +368,16 @@ export function UserDetail({ userId }: Readonly<Props>) {
               <div className="flex items-center justify-between gap-3 text-sm">
                 <span className="text-muted-foreground">Rol</span>
                 <span className="font-medium text-slate-900">
-                  {user.role_id === 2
-                    ? "Administrador"
-                    : user.role_id === 1
-                      ? "Usuario"
-                      : `Rol ${user.role_id}`}
+                  {roles.length > 0
+                    ? getRoleName(roles, user.role_id)
+                    : "—"}
                 </span>
               </div>
 
               <div className="flex items-center justify-between gap-3 text-sm">
                 <span className="text-muted-foreground">Registro</span>
                 <span className="font-medium text-slate-900">
-                  {formatDate(user.created_at)}
+                  {formatUserDate(user.created_at)}
                 </span>
               </div>
 
@@ -343,6 +402,17 @@ export function UserDetail({ userId }: Readonly<Props>) {
                 >
                   {isActive ? "Desactivar cuenta" : "Activar cuenta"}
                 </Button>
+
+                {canChangeRole && (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    disabled={saving}
+                    onClick={() => setRoleConfirmOpen(true)}
+                  >
+                    {isAdmin ? "Quitar administrador" : "Hacer administrador"}
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -387,6 +457,53 @@ export function UserDetail({ userId }: Readonly<Props>) {
                 : isActive
                   ? "Desactivar"
                   : "Activar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={roleConfirmOpen}
+        onOpenChange={(open) => {
+          if (!saving) setRoleConfirmOpen(open);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {isAdmin
+                ? `¿Quitar el rol de administrador a ${user.username}?`
+                : `¿Hacer administrador a ${user.username}?`}
+            </AlertDialogTitle>
+
+            <AlertDialogDescription>
+              {isAdmin
+                ? `${user.email} perderá el acceso al panel de administración.`
+                : `${user.email} podrá moderar publicaciones y gestionar usuarios y catálogos.`}{" "}
+              El cambio puede tardar unos minutos en aplicarse.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Cancelar</AlertDialogCancel>
+
+            <AlertDialogAction
+              disabled={saving}
+              className={
+                isAdmin
+                  ? "bg-destructive text-white hover:bg-destructive/90"
+                  : undefined
+              }
+              onClick={(event) => {
+                event.preventDefault();
+                void toggleAdminRole();
+              }}
+            >
+              {saving
+                ? "Guardando..."
+                : isAdmin
+                  ? "Quitar administrador"
+                  : "Hacer administrador"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
