@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { api } from "@/lib/api";
+import { api, getBackendFileUrl } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -193,7 +193,7 @@ export function PostEvidenceManager({
                     aria-label={`Vista previa de evidencia ${evidence.id}`}
                   >
                     <Image
-                      src={evidence.url}
+                      src={getBackendFileUrl(evidence.url)}
                       alt={`Evidencia ${evidence.id}`}
                       fill
                       unoptimized
@@ -302,7 +302,7 @@ export function PostEvidenceManager({
               <div className="relative flex h-[55vh] min-w-0 flex-1 items-center justify-center overflow-hidden rounded-lg bg-muted">
                 <Image
                   key={selectedEvidence.id}
-                  src={selectedEvidence.url}
+                  src={getBackendFileUrl(selectedEvidence.url)}
                   alt={`Vista ampliada de evidencia ${selectedEvidence.id}`}
                   fill
                   unoptimized
