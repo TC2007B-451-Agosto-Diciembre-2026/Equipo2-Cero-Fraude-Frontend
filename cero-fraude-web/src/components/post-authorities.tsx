@@ -125,16 +125,10 @@ export function PostAuthorities({
     }
   }
 
-  function getAuthority(id: number) {
-    return availableAuthorities.find(
-      (authority) => authority.id === id
-    );
-  }
-
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Autoridades recomendadas</CardTitle>
+        <CardTitle className="text-base">Autoridades recomendadas</CardTitle>
         <CardDescription>
           {canEdit
             ? "Selecciona las autoridades y establece su prioridad."
@@ -148,20 +142,12 @@ export function PostAuthorities({
             No hay autoridades recomendadas.
           </p>
         ) : (
-          <div className="space-y-2">
-            {selectedIds.map((id) => {
-              const authority = getAuthority(id);
-
-              return (
-                <AuthoritySortableList
-                    authorityIds={selectedIds}
-                    availableAuthorities={availableAuthorities}
-                    onChange={setSelectedIds}
-                    disabled={saving || !canEdit}
-                    />
-              );
-            })}
-          </div>
+          <AuthoritySortableList
+            authorityIds={selectedIds}
+            availableAuthorities={availableAuthorities}
+            onChange={setSelectedIds}
+            disabled={saving || !canEdit}
+          />
         )}
 
         {canEdit && (
