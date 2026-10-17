@@ -6,6 +6,7 @@ import Link from "next/link";
 import axios from "axios";
 import {
   ArrowRight,
+  ChartColumnDecreasing,
   CheckCircle2,
   Clock3,
   FileText,
@@ -15,7 +16,8 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/page-header";
+import { PostStatusBadge } from "@/components/post-status-badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -63,12 +65,13 @@ type DashboardData = {
   statusCodes: Record<number, string>;
 };
 
-const statusLabels: Record<string, string> = {
-  UPLOADED: "Subida",
-  PUBLISHED: "Publicada",
-  VALIDATED: "Validada",
-  REJECTED: "Rechazada",
-  DRAFT: "Borrador",
+type Metric = {
+  label: string;
+  value: number;
+  description: string;
+  icon: typeof Clock3;
+  // Only the metrics that need action link to a filtered list.
+  href?: string;
 };
 
 function getErrorMessage(error: unknown) {
@@ -208,52 +211,43 @@ export default function DashboardPage() {
     return () => controller.abort();
   }, [loadDashboard, refreshKey]);
 
-  const metrics = data
+  const metrics: Metric[] = data
     ? [
         {
           label: "Pendientes de revisión",
           value: data.pendingReview,
           description: "Publicaciones por revisar",
           icon: Clock3,
-          href: "/posts",
+          href: "/posts?status=UPLOADED",
         },
         {
           label: "Pendientes de validación",
           value: data.pendingValidation,
           description: "Publicaciones publicadas sin validar",
           icon: ShieldAlert,
-          href: "/posts",
+          href: "/posts?status=PUBLISHED",
         },
         {
           label: "Usuarios activos",
           value: data.activeUsers,
           description: "Cuentas activas del sistema",
           icon: Users,
-          href: "/users",
         },
         {
           label: "Publicaciones validadas",
           value: data.validated,
           description: "Casos con validación realizada",
           icon: CheckCircle2,
-          href: "/statistics",
         },
       ]
     : [];
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Panel principal
-          </h1>
-
-          <p className="mt-1 text-sm text-muted-foreground">
-            Resumen de actividad y tareas pendientes de Cero Fraude.
-          </p>
-        </div>
-
+      <PageHeader
+        title="Panel principal"
+        description="Resumen de actividad y tareas pendientes de Cero Fraude."
+      >
         <Button
           variant="outline"
           disabled={loading}
@@ -262,13 +256,12 @@ export default function DashboardPage() {
           }
         >
           <RefreshCw
-            className={`mr-2 size-4 ${
-              loading ? "animate-spin" : ""
-            }`}
+            data-icon="inline-start"
+            className={loading ? "animate-spin" : ""}
           />
           Actualizar
         </Button>
-      </div>
+      </PageHeader>
 
       {error ? (
         <Card>
@@ -292,7 +285,7 @@ export default function DashboardPage() {
         </Card>
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {loading
               ? Array.from({ length: 4 }).map((_, index) => (
                   <Card key={index}>
@@ -306,42 +299,66 @@ export default function DashboardPage() {
               : metrics.map((metric) => {
                   const Icon = metric.icon;
 
-                  return (
+                  const card = (
+                    <Card
+                      className={
+                        metric.href
+                          ? "h-full border-emerald-200 transition-colors hover:bg-emerald-50/40"
+                          : "h-full"
+                      }
+                    >
+                      <CardContent className="flex flex-col gap-1">
+                        <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
+                          <span>{metric.label}</span>
+                          <Icon
+                            className="size-4 shrink-0 text-emerald-700"
+                            aria-hidden="true"
+                          />
+                        </div>
+
+                        <p className="text-3xl font-bold tracking-tight text-slate-900 tabular-nums">
+                          {metric.value.toLocaleString("es-MX")}
+                        </p>
+
+                        <div className="flex items-start justify-between gap-3 text-xs text-muted-foreground">
+                          <span className="min-w-0">
+                            {metric.description}
+                          </span>
+
+                          {metric.href && (
+                            <span className="flex shrink-0 items-center gap-1 font-semibold whitespace-nowrap text-emerald-800">
+                              Revisar
+                              <ArrowRight
+                                className="size-3"
+                                aria-hidden="true"
+                              />
+                            </span>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+
+                  return metric.href ? (
                     <Link
                       key={metric.label}
                       href={metric.href}
                       className="block rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                     >
-                      <Card className="h-full transition-colors hover:bg-muted/40">
-                        <CardContent className="pt-6">
-                          <div className="flex items-start justify-between gap-2">
-                            <p className="text-sm text-muted-foreground">
-                              {metric.label}
-                            </p>
-
-                            <Icon className="size-5 shrink-0 text-emerald-700" />
-                          </div>
-
-                          <p className="mt-3 text-3xl font-semibold tabular-nums">
-                            {metric.value.toLocaleString("es-MX")}
-                          </p>
-
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {metric.description}
-                          </p>
-                        </CardContent>
-                      </Card>
+                      {card}
                     </Link>
+                  ) : (
+                    <div key={metric.label}>{card}</div>
                   );
                 })}
           </div>
 
-          <div className="grid items-start gap-6 xl:grid-cols-3">
-            <Card className="xl:col-span-2">
+          <div className="grid items-start gap-4 lg:grid-cols-3">
+            <Card className="lg:col-span-2">
               <CardHeader>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="space-y-1">
-                    <CardTitle>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-base">
                       Publicaciones pendientes de atención
                     </CardTitle>
 
@@ -354,7 +371,7 @@ export default function DashboardPage() {
                   <Button variant="outline" size="sm" asChild>
                     <Link href="/posts">
                       Ver todas
-                      <ArrowRight className="ml-2 size-4" />
+                      <ArrowRight data-icon="inline-end" />
                     </Link>
                   </Button>
                 </div>
@@ -394,27 +411,22 @@ export default function DashboardPage() {
                         className="flex items-center justify-between gap-3 rounded-lg border p-4 transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring"
                       >
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">
-                            {post.title}
+                          <p className="truncate text-sm font-medium text-slate-900">
+                            {post.title || "Sin título"}
                           </p>
 
-                          <p className="mt-1 text-xs text-muted-foreground">
+                          <p className="text-xs text-muted-foreground">
                             Publicación #{post.id}
                           </p>
                         </div>
 
-                        <Badge
-                          variant={
-                            statusCode === "UPLOADED"
-                              ? "secondary"
-                              : "outline"
-                          }
-                        >
-                          {statusLabels[statusCode] ??
-                            statusCode}
-                        </Badge>
-
-                        <ArrowRight className="size-4 shrink-0 text-muted-foreground" />
+                        <div className="flex shrink-0 items-center gap-3">
+                          <PostStatusBadge code={statusCode} />
+                          <ArrowRight
+                            className="size-4 text-muted-foreground"
+                            aria-hidden="true"
+                          />
+                        </div>
                       </Link>
                     );
                   })
@@ -431,7 +443,7 @@ export default function DashboardPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Accesos rápidos</CardTitle>
+                <CardTitle className="text-base">Accesos rápidos</CardTitle>
 
                 <CardDescription>
                   Navega a las principales áreas administrativas.
@@ -445,7 +457,7 @@ export default function DashboardPage() {
                   asChild
                 >
                   <Link href="/posts">
-                    <FileText className="mr-2 size-4" />
+                    <FileText data-icon="inline-start" />
                     Administrar publicaciones
                   </Link>
                 </Button>
@@ -456,7 +468,7 @@ export default function DashboardPage() {
                   asChild
                 >
                   <Link href="/users">
-                    <Users className="mr-2 size-4" />
+                    <Users data-icon="inline-start" />
                     Administrar usuarios
                   </Link>
                 </Button>
@@ -467,7 +479,7 @@ export default function DashboardPage() {
                   asChild
                 >
                   <Link href="/statistics">
-                    <CheckCircle2 className="mr-2 size-4" />
+                    <ChartColumnDecreasing data-icon="inline-start" />
                     Ver estadísticas
                   </Link>
                 </Button>

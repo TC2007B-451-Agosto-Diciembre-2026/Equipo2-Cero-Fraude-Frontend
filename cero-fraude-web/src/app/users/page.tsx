@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { PageHeader } from "@/components/page-header";
+import { UserStatusBadge } from "@/components/user-status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -81,6 +83,19 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  // Marks the caller's own row with "Tú".
+  useEffect(() => {
+    const controller = new AbortController();
+
+    api
+      .get<{ id: string }>("/users/me", { signal: controller.signal })
+      .then((response) => setCurrentUserId(response.data.id))
+      .catch(() => {});
+
+    return () => controller.abort();
+  }, []);
 
   const loadUsers = useCallback(async (signal: AbortSignal) => {
     setLoading(true);
@@ -154,38 +169,35 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Administración de usuarios
-          </h1>
-
-          <p className="mt-1 text-sm text-muted-foreground">
-            Consulta las cuentas registradas y administra sus estados.
-          </p>
-        </div>
-
+      <PageHeader
+        title="Administración de usuarios"
+        description="Consulta las cuentas registradas y administra sus estados."
+      >
         <Button
           variant="outline"
           onClick={refreshUsers}
           disabled={loading}
         >
           <RefreshCw
-            className={`mr-2 size-4 ${
-              loading ? "animate-spin" : ""
-            }`}
+            data-icon="inline-start"
+            className={loading ? "animate-spin" : ""}
           />
           Actualizar
         </Button>
-      </div>
+      </PageHeader>
 
       <Card>
-        <CardContent className="space-y-4 pt-6">
-          <div className="flex flex-col gap-3 lg:flex-row">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_12rem_12rem]">
+            <div className="relative sm:col-span-2 lg:col-span-1">
+              <Search
+                className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
 
               <Input
+                type="search"
+                aria-label="Buscar usuario"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Buscar en esta página por usuario o correo..."
@@ -197,7 +209,7 @@ export default function UsersPage() {
               value={statusFilter}
               onValueChange={changeStatus}
             >
-              <SelectTrigger className="w-full lg:w-44">
+              <SelectTrigger className="w-full" aria-label="Filtrar por estado">
                 <SelectValue placeholder="Estado" />
               </SelectTrigger>
 
@@ -218,7 +230,7 @@ export default function UsersPage() {
               value={roleFilter}
               onValueChange={changeRole}
             >
-              <SelectTrigger className="w-full lg:w-44">
+              <SelectTrigger className="w-full" aria-label="Filtrar por rol">
                 <SelectValue placeholder="Rol" />
               </SelectTrigger>
 
@@ -236,7 +248,7 @@ export default function UsersPage() {
             </Select>
           </div>
 
-          <div className="overflow-hidden rounded-lg border">
+          <div className="overflow-x-auto rounded-lg border">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -280,7 +292,10 @@ export default function UsersPage() {
                 ) : filteredUsers.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={5} className="py-12 text-center">
-                      <Users className="mx-auto mb-3 size-8 text-muted-foreground" />
+                      <Users
+                        className="mx-auto mb-3 size-6 text-muted-foreground"
+                        aria-hidden="true"
+                      />
                       <p className="text-sm text-muted-foreground">
                         No se encontraron usuarios.
                       </p>
@@ -310,15 +325,20 @@ export default function UsersPage() {
                           }
                         }}
                       >
-                        <TableCell className="font-medium">
+                        <TableCell className="font-medium text-slate-900">
                           {user.username}
+                          {user.id === currentUserId && (
+                            <Badge variant="outline" className="ml-2">
+                              Tú
+                            </Badge>
+                          )}
                         </TableCell>
 
-                        <TableCell className="text-muted-foreground">
+                        <TableCell className="text-slate-700">
                           {user.email}
                         </TableCell>
 
-                        <TableCell>
+                        <TableCell className="text-slate-800">
                           {user.role_id === 2
                             ? "Administrador"
                             : user.role_id === 1
@@ -327,15 +347,14 @@ export default function UsersPage() {
                         </TableCell>
 
                         <TableCell>
-                          <Badge
-                            variant={isActive ? "default" : "secondary"}
-                          >
-                            {isActive ? "Activo" : "Inactivo"}
-                          </Badge>
+                          <UserStatusBadge active={isActive} />
                         </TableCell>
 
                         <TableCell className="text-right">
-                          <ChevronRight className="ml-auto size-4 text-muted-foreground" />
+                          <ChevronRight
+                            className="ml-auto size-4 text-muted-foreground"
+                            aria-hidden="true"
+                          />
                         </TableCell>
                       </TableRow>
                     );
@@ -346,7 +365,7 @@ export default function UsersPage() {
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground" aria-live="polite">
               {loading
                 ? "Cargando usuarios..."
                 : `${total} usuarios en el filtro · ${filteredUsers.length} visibles en esta página`}

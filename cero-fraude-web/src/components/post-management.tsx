@@ -8,7 +8,18 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import {
+  CheckCircle2,
+  Plus,
+  ShieldAlert,
+  ThumbsDown,
+  ThumbsUp,
+} from "lucide-react";
+import {
+  PostStatusBadge,
+  type PostStatusCode,
+} from "@/components/post-status-badge";
 import { AuthoritySortableList } from "@/components/authority-sortable-list";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -22,13 +33,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-
-type PostStatus =
-  | "DRAFT"
-  | "UPLOADED"
-  | "PUBLISHED"
-  | "VALIDATED"
-  | "REJECTED";
 
 type PostComment = {
   id: number;
@@ -47,21 +51,22 @@ type ModerationAction = {
   label: string;
   statusId: number;
   isFraud?: boolean;
-  variant: "default" | "outline" | "destructive";
+  icon: typeof ThumbsUp;
+  variant: "default" | "outline";
+  className: string;
 };
 
-const statusLabels: Record<PostStatus, string> = {
-  DRAFT: "Borrador",
-  UPLOADED: "Subida",
-  PUBLISHED: "Publicada",
-  VALIDATED: "Validada",
-  REJECTED: "Rechazada",
-};
+// Positive actions use the brand fill, the ones that mark something as bad
+// use a red outline (never a red fill, so they don't look like the default).
+const primaryActionClass =
+  "bg-emerald-700 text-white hover:bg-emerald-800";
+const negativeActionClass =
+  "border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800";
 
 
 type Props = {
   postId: number;
-  initialStatus: PostStatus;
+  initialStatus: PostStatusCode;
   initialIsFraud: boolean | null;
   initialComments: PostComment[];
   statusIds: {
@@ -104,7 +109,9 @@ if (statusIds.PUBLISHED !== undefined) {
     availableActions.push({
     label: "Publicar",
     statusId: statusIds.PUBLISHED,
+    icon: ThumbsUp,
     variant: "default",
+    className: primaryActionClass,
     });
 }
 
@@ -112,7 +119,9 @@ if (statusIds.REJECTED !== undefined) {
     availableActions.push({
     label: "Rechazar",
     statusId: statusIds.REJECTED,
-    variant: "destructive",
+    icon: ThumbsDown,
+    variant: "outline",
+    className: negativeActionClass,
     });
 }
 }
@@ -124,13 +133,17 @@ if (statusIds.VALIDATED !== undefined) {
         label: "Validar como fraude",
         statusId: statusIds.VALIDATED,
         isFraud: true,
-        variant: "default",
+        icon: ShieldAlert,
+        variant: "outline",
+        className: negativeActionClass,
     },
     {
         label: "Validar como no fraude",
         statusId: statusIds.VALIDATED,
         isFraud: false,
+        icon: CheckCircle2,
         variant: "outline",
+        className: "",
     }
     );
 }
@@ -139,7 +152,9 @@ if (statusIds.REJECTED !== undefined) {
     availableActions.push({
     label: "Rechazar",
     statusId: statusIds.REJECTED,
-    variant: "destructive",
+    icon: ThumbsDown,
+    variant: "outline",
+    className: negativeActionClass,
     });
 }
 }
@@ -223,7 +238,7 @@ const remainingAuthorities = availableAuthorities.filter(
   Object.entries(statusIds).find(
     ([, id]) => id === selectedAction.statusId
   )?.[0]
-) as PostStatus | undefined;
+) as PostStatusCode | undefined;
 
       if (nextStatus) setStatus(nextStatus);
 
@@ -283,22 +298,18 @@ const remainingAuthorities = availableAuthorities.filter(
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Moderación</CardTitle>
+          <CardTitle className="text-base">Moderación</CardTitle>
         </CardHeader>
 
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-sm text-muted-foreground">
-              Estado actual
-            </span>
-            <Badge variant="outline">{statusLabels[status]}</Badge>
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="text-muted-foreground">Estado actual</span>
+            <PostStatusBadge code={status} />
           </div>
 
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-sm text-muted-foreground">
-              Validación
-            </span>
-            <span className="text-sm font-medium">
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="text-muted-foreground">Validación</span>
+            <span className="font-medium text-slate-900">
               {isFraud === null
                 ? "Sin validar"
                 : isFraud
@@ -307,19 +318,28 @@ const remainingAuthorities = availableAuthorities.filter(
             </span>
           </div>
 
-          <div className="space-y-2">
-            {availableActions.map((action) => (
-              <Button
-                key={action.label}
-                variant={action.variant}
-                className="w-full"
-                disabled={loading}
-                onClick={() => openAction(action)}
-              >
-                {action.label}
-              </Button>
-            ))}
-          </div>
+          {availableActions.length > 0 && (
+            <div className="space-y-2 border-t pt-3">
+              <p className="text-xs text-muted-foreground">
+                {status === "UPLOADED"
+                  ? "Revisa la publicación antes de publicarla."
+                  : "Clasifica esta publicación tras revisarla."}
+              </p>
+
+              {availableActions.map((action) => (
+                <Button
+                  key={action.label}
+                  variant={action.variant}
+                  className={`w-full ${action.className}`}
+                  disabled={loading}
+                  onClick={() => openAction(action)}
+                >
+                  <action.icon data-icon="inline-start" />
+                  {action.label}
+                </Button>
+              ))}
+            </div>
+          )}
 
           {status === "REJECTED" && (
             <p className="text-sm text-red-700">
@@ -328,7 +348,7 @@ const remainingAuthorities = availableAuthorities.filter(
           )}
 
           {status === "VALIDATED" && (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Esta publicación ya fue validada.
             </p>
           )}
@@ -343,25 +363,31 @@ const remainingAuthorities = availableAuthorities.filter(
 
       <Card>
         <CardHeader>
-          <CardTitle>Comentarios administrativos</CardTitle>
+          <CardTitle className="text-base">
+            Comentarios administrativos
+          </CardTitle>
         </CardHeader>
 
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-3">
           {comments.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No hay comentarios registrados.
+              Aún no hay comentarios.
             </p>
           ) : (
             comments.map((comment) => (
-              <div key={comment.id} className="rounded-lg border p-4">
-                <div className="flex flex-wrap justify-between gap-2">
-                  <p className="text-sm font-semibold">{comment.user}</p>
-                  <span className="text-xs text-muted-foreground">
-                    {new Date(comment.created_at).toLocaleString("es-MX")}
-                  </span>
-                </div>
+              <div
+                key={comment.id}
+                className="rounded-md bg-slate-100 p-3 text-sm text-slate-900"
+              >
+                <p className="text-xs text-muted-foreground">
+                  {comment.user} ·{" "}
+                  {new Date(comment.created_at).toLocaleString("es-MX", {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })}
+                </p>
 
-                <p className="mt-2 text-sm">{comment.text}</p>
+                <p className="mt-1 break-words">{comment.text}</p>
 
                 {comment.is_visible !== undefined &&
                   !comment.is_visible && (
@@ -373,27 +399,24 @@ const remainingAuthorities = availableAuthorities.filter(
             ))
           )}
 
-          <div className="space-y-3 border-t pt-4">
-            <label htmlFor="comment-text" className="text-sm font-medium">
-              Escribir un comentario
-            </label>
+          <div className="space-y-2 border-t pt-3">
+            <Label htmlFor="comment-text">Nuevo comentario</Label>
 
             <Textarea
               id="comment-text"
               value={commentText}
               onChange={(event) => setCommentText(event.target.value)}
-              placeholder="Escribe un comentario administrativo..."
-              rows={4}
+              placeholder="Escribe una nota interna…"
+              rows={3}
             />
 
-            <div className="flex justify-end">
-              <Button
-                disabled={!commentText.trim() || loading}
-                onClick={submitComment}
-              >
-                {loading ? "Guardando..." : "Publicar comentario"}
-              </Button>
-            </div>
+            <Button
+              className="w-full"
+              disabled={!commentText.trim() || loading}
+              onClick={submitComment}
+            >
+              {loading ? "Guardando..." : "Publicar comentario"}
+            </Button>
           </div>
         </CardContent>
       </Card>

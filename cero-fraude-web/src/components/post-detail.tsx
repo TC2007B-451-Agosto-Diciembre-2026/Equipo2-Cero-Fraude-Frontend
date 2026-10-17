@@ -14,28 +14,23 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { PageHeader } from "@/components/page-header";
 import { PostManagement } from "@/components/post-management";
+import {
+  PostStatusBadge,
+  type PostStatusCode,
+} from "@/components/post-status-badge";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PostEvidenceManager } from "@/components/post-evidence-manager";
 import { PostAuthorities } from "@/components/post-authorities";
 import { PostReports } from "@/components/post-reports";
-
-type PostStatus =
-  | "DRAFT"
-  | "UPLOADED"
-  | "PUBLISHED"
-  | "VALIDATED"
-  | "REJECTED";
 
 type CatalogItem = {
   id: number;
@@ -92,25 +87,21 @@ type Props = {
   postId: number;
 };
 
-const statusLabels: Record<PostStatus, string> = {
-  DRAFT: "Borrador",
-  UPLOADED: "Subida",
-  PUBLISHED: "Publicada",
-  VALIDATED: "Validada",
-  REJECTED: "Rechazada",
-};
-
 function formatDate(value: string | null) {
-  if (!value) return "No disponible";
+  if (!value) return null;
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) return "No disponible";
+  if (Number.isNaN(date.getTime())) return null;
 
   return new Intl.DateTimeFormat("es-MX", {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
+}
+
+function isEmpty(value: React.ReactNode) {
+  return value === null || value === undefined || value === "";
 }
 
 function InfoField({
@@ -121,12 +112,10 @@ function InfoField({
   value: React.ReactNode;
 }) {
   return (
-    <div className="space-y-1">
-      <dt className="text-sm text-muted-foreground">{label}</dt>
-      <dd className="break-words text-sm font-medium">
-        {value === null || value === undefined || value === ""
-          ? "No disponible"
-          : value}
+    <div>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 break-words text-sm font-medium text-slate-900">
+        {isEmpty(value) ? "No disponible" : value}
       </dd>
     </div>
   );
@@ -222,12 +211,7 @@ export function PostDetail({ postId }: Props) {
   if (error || !post) {
     return (
       <div className="space-y-5">
-        <Button variant="ghost" asChild>
-          <Link href="/posts">
-            <ArrowLeft className="mr-2 size-4" />
-            Volver a publicaciones
-          </Link>
-        </Button>
+        <BackLink />
         <Card>
           <CardContent className="py-10 text-center">
             <p role="alert" className="text-sm text-destructive">
@@ -241,7 +225,7 @@ export function PostDetail({ postId }: Props) {
 
   const statusCode = states.find(
     (state) => state.id === post.status_id
-  )?.code as PostStatus | undefined;
+  )?.code as PostStatusCode | undefined;
 
   const categoryName = categories.find(
     (category) => category.id === post.category
@@ -261,108 +245,106 @@ export function PostDetail({ postId }: Props) {
   };
 
   function refreshPost() {
-  setRefreshKey((current) => current + 1);
-}
+    setRefreshKey((current) => current + 1);
+  }
+
+  // Optional details. The ones without data are grouped at the end so the
+  // card isn't a list of "No disponible".
+  const details: { label: string; value: React.ReactNode }[] = [
+    { label: "Vendedor", value: post.seller_name },
+    { label: "Producto", value: post.product },
+    { label: "Plataforma", value: post.platform },
+    { label: "Teléfono", value: post.phone_number },
+    { label: "Correo fraudulento", value: post.fraudulent_email },
+    { label: "Fecha de publicación", value: formatDate(post.published_at) },
+    { label: "Enlace original", value: post.url },
+  ];
+  const filledDetails = details.filter((detail) => !isEmpty(detail.value));
+  const emptyDetails = details.filter((detail) => isEmpty(detail.value));
 
   return (
     <div className="space-y-6">
-      <Button variant="ghost" asChild className="px-0">
-        <Link href="/posts">
-          <ArrowLeft className="mr-2 size-4" />
-          Volver a publicaciones
-        </Link>
-      </Button>
+      <div className="space-y-3">
+        <BackLink />
 
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            {post.title || "Publicación sin título"}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Publicación #{post.id}
-          </p>
-        </div>
-
-        <Badge variant="outline">
-          {statusCode
-            ? statusLabels[statusCode]
-            : `Estado #${post.status_id}`}
-        </Badge>
+        <PageHeader
+          title={post.title || "Publicación sin título"}
+          description={
+            <span className="flex flex-wrap items-center gap-2">
+              <span>
+                Publicación #{post.id}
+                {post.author ? ` · por ${post.author}` : ""}
+              </span>
+              <PostStatusBadge
+                code={statusCode}
+                fallback={`Estado #${post.status_id}`}
+              />
+            </span>
+          }
+        />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
+      <div className="grid items-start gap-4 lg:grid-cols-3">
+        <div className="space-y-4 lg:col-span-2">
           <Card>
             <CardHeader>
-              <CardTitle>Información general</CardTitle>
-              <CardDescription>
-                Información registrada en la publicación.
-              </CardDescription>
+              <CardTitle className="text-base">Información general</CardTitle>
             </CardHeader>
 
-            <CardContent className="space-y-5">
-              <InfoField
-                label="Descripción"
-                value={post.description}
-              />
+            <CardContent>
+              <dl className="grid gap-4 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <InfoField
+                    label="Descripción"
+                    value={post.description}
+                  />
+                </div>
 
-              <Separator />
+                <InfoField label="Categoría" value={categoryName} />
 
-              <dl className="grid gap-5 sm:grid-cols-2">
-                <InfoField
-                  label="Vendedor"
-                  value={post.seller_name}
-                />
-                <InfoField
-                  label="Producto"
-                  value={post.product}
-                />
-                <InfoField
-                  label="Plataforma"
-                  value={post.platform}
-                />
-                <InfoField
-                  label="Categoría"
-                  value={categoryName}
-                />
-                <InfoField
-                  label="Teléfono"
-                  value={post.phone_number}
-                />
-                <InfoField
-                  label="Correo fraudulento"
-                  value={post.fraudulent_email}
-                />
-                <InfoField
-                  label="Fecha de publicación"
-                  value={formatDate(post.published_at)}
-                />
-                <InfoField
-                  label="Enlace original"
-                  value={post.url}
-                />
+                <div>
+                  <dt className="text-xs text-muted-foreground">
+                    Tipos de fraude
+                  </dt>
+                  <dd className="mt-1 flex flex-wrap gap-2">
+                    {post.types.length === 0 ? (
+                      <span className="text-sm font-medium text-slate-900">
+                        Sin tipos asociados
+                      </span>
+                    ) : (
+                      post.types.map((id) => (
+                        <Badge key={id} variant="outline">
+                          {getTypeName(id)}
+                        </Badge>
+                      ))
+                    )}
+                  </dd>
+                </div>
+
+                {filledDetails.map((detail) => (
+                  <InfoField
+                    key={detail.label}
+                    label={detail.label}
+                    value={detail.value}
+                  />
+                ))}
               </dl>
 
-              <Separator />
-
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  Tipos de fraude
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {post.types.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      Sin tipos asociados.
-                    </p>
-                  ) : (
-                    post.types.map((id) => (
-                      <Badge key={id} variant="outline">
-                        {getTypeName(id)}
-                      </Badge>
-                    ))
-                  )}
-                </div>
-              </div>
+              {emptyDetails.length > 0 && (
+                <details className="mt-4">
+                  <summary className="cursor-pointer text-sm text-slate-700">
+                    {emptyDetails.length}{" "}
+                    {emptyDetails.length === 1
+                      ? "campo sin datos"
+                      : "campos sin datos"}
+                  </summary>
+                  <ul className="mt-2 list-disc space-y-0.5 pl-5 text-sm text-muted-foreground">
+                    {emptyDetails.map((detail) => (
+                      <li key={detail.label}>{detail.label}</li>
+                    ))}
+                  </ul>
+                </details>
+              )}
             </CardContent>
           </Card>
 
@@ -378,49 +360,9 @@ export function PostDetail({ postId }: Props) {
           />
 
           <PostReports postId={post.id} />
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MessageSquare className="size-5 text-emerald-700" />
-                Interacciones
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex gap-6">
-              <div className="flex items-center gap-2">
-                <ThumbsUp className="size-4" />
-                <span>{post.reactions.like}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <ThumbsDown className="size-4" />
-                <span>{post.reactions.dislike}</span>
-              </div>
-            </CardContent>
-          </Card>
         </div>
 
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <UserRound className="size-5 text-emerald-700" />
-                Autor
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <InfoField
-                label="Usuario"
-                value={post.author}
-              />
-              {post.is_anonymous !== undefined && (
-                <InfoField
-                  label="Publicación anónima"
-                  value={post.is_anonymous ? "Sí" : "No"}
-                />
-              )}
-            </CardContent>
-          </Card>
-
+        <div className="space-y-4">
           {statusCode && statusCode !== "DRAFT" && (
             <PostManagement
               key={post.id}
@@ -444,8 +386,83 @@ export function PostDetail({ postId }: Props) {
               onUpdated={refreshPost}
             />
           )}
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <UserRound
+                  className="size-4 text-slate-700"
+                  aria-hidden="true"
+                />
+                Autor
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">Usuario</span>
+                <span className="font-medium text-slate-900">
+                  {post.author ?? "Anónimo"}
+                </span>
+              </div>
+
+              {post.is_anonymous !== undefined && (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">
+                    Publicación anónima
+                  </span>
+                  <span className="font-medium text-slate-900">
+                    {post.is_anonymous ? "Sí" : "No"}
+                  </span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <MessageSquare
+                  className="size-4 text-slate-700"
+                  aria-hidden="true"
+                />
+                Interacciones
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex items-center gap-6 text-sm text-slate-900">
+              <span className="flex items-center gap-2">
+                <ThumbsUp
+                  className="size-4 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <span className="tabular-nums">{post.reactions.like}</span>
+                <span className="sr-only">me gusta</span>
+              </span>
+              <span className="flex items-center gap-2">
+                <ThumbsDown
+                  className="size-4 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <span className="tabular-nums">
+                  {post.reactions.dislike}
+                </span>
+                <span className="sr-only">no me gusta</span>
+              </span>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>
+  );
+}
+
+function BackLink() {
+  return (
+    <Link
+      href="/posts"
+      className="inline-flex items-center gap-1 text-sm text-slate-700 hover:text-slate-900"
+    >
+      <ArrowLeft className="size-4" aria-hidden="true" />
+      Publicaciones
+    </Link>
   );
 }
